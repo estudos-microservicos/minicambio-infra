@@ -1,0 +1,123 @@
+name: minicambio
+
+# Configuração comum às três APIs .NET.
+x-api-environment: &api-environment
+  ASPNETCORE_ENVIRONMENT: Development
+  Database__ApplyMigrationsOnStartup: "true"
+
+# Healthcheck comum aos três Postgres.
+x-db-healthcheck: &db-healthcheck
+  test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+  interval: 5s
+  timeout: 5s
+  retries: 10
+  start_period: 10s
+
+services:
+  # ---------------------------------------------------------------- bancos
+  rates-db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: rates
+      POSTGRES_USER: ${RATES_DB_USER:?defina RATES_DB_USER no .env}
+      POSTGRES_PASSWORD: ${RATES_DB_PASSWORD:?defina RATES_DB_PASSWORD no .env}
+    ports:
+      - "5433:5432" # apenas para inspeção local
+    volumes:
+      - rates-db-data:/var/lib/postgresql/data
+    healthcheck: *db-healthcheck
+    networks: [rates-net]
+
+  payments-db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: payments
+      POSTGRES_USER: ${PAYMENTS_DB_USER:?defina PAYMENTS_DB_USER no .env}
+      POSTGRES_PASSWORD: ${PAYMENTS_DB_PASSWORD:?defina PAYMENTS_DB_PASSWORD no .env}
+    ports:
+      - "5434:5432" # apenas para inspeção local
+    volumes:
+      - payments-db-data:/var/lib/postgresql/data
+    healthcheck: *db-healthcheck
+    networks: [payments-net]
+
+  orders-db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: orders
+      POSTGRES_USER: ${ORDERS_DB_USER:?defina ORDERS_DB_USER no .env}
+      POSTGRES_PASSWORD: ${ORDERS_DB_PASSWORD:?defina ORDERS_DB_PASSWORD no .env}
+    ports:
+      - "5435:5432" # apenas para inspeção local
+    volumes:
+      - orders-db-data:/var/lib/postgresql/data
+    healthcheck: *db-healthcheck
+    networks: [orders-net]
+
+  # ---------------------------------------------------------------- APIs
+  rates-api:
+    build: ../minicambio-rates
+    environment:
+      <<: *api-environment
+      ConnectionStrings__Default: Host=rates-db;Port=5432;Database=rates;Username=${RATES_DB_USER};Password=${RATES_DB_PASSWORD}
+    ports:
+      - "5001:8080"
+    depends_on:
+      rates-db:
+        condition: service_healthy
+    networks: [rates-net, backend]
+
+  payments-api:
+    build: ../minicambio-payments
+    environment:
+      <<: *api-environment
+      ConnectionStrings__Default: Host=payments-db;Port=5432;Database=payments;Username=${PAYMENTS_DB_USER};Password=${PAYMENTS_DB_PASSWORD}
+    ports:
+      - "5002:8080"
+    depends_on:
+      payments-db:
+        condition: service_healthy
+    networks: [payments-net, backend]
+
+  orders-api:
+    build: ../minicambio-orders
+    environment:
+      <<: *api-environment
+      ConnectionStrings__Default: Host=orders-db;Port=5432;Database=orders;Username=${ORDERS_DB_USER};Password=${ORDERS_DB_PASSWORD}
+      Services__RatesApi: http://rates-api:8080
+      Services__PaymentsApi: http://payments-api:8080
+    ports:
+      - "5000:8080"
+    depends_on:
+      orders-db:
+        condition: service_healthy
+      rates-api:
+        condition: service_started
+      payments-api:
+        condition: service_started
+    networks: [orders-net, backend, frontend]
+
+  # ---------------------------------------------------------------- frontend
+  web:
+    build: ../minicambio-web
+    environment:
+      ORDERS_API_URL: http://orders-api:8080
+    ports:
+      - "3000:8080"
+    depends_on:
+      - orders-api
+    networks: [frontend]
+
+# Cada banco só é visível para a sua API; as APIs se falam pela "backend";
+# o web só enxerga o orders-api pela "frontend".
+networks:
+  rates-net:
+  payments-net:
+  orders-net:
+  backend:
+  frontend:
+
+volumes:
+  rates-db-data:
+  payments-db-data:
+  orders-db-data:
