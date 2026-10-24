@@ -1,0 +1,11 @@
+# Variáveis de ambiente locais (credenciais dos bancos)
+.env
+
+# Editores e sistema operacional
+.vs/
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
