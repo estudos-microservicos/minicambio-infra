@@ -5,13 +5,27 @@ x-api-environment: &api-environment
   ASPNETCORE_ENVIRONMENT: Development
   Database__ApplyMigrationsOnStartup: "true"
 
-# Healthcheck comum aos três Postgres.
+# Healthcheck comum aos três Postgres. -h localhost força TCP: durante a inicialização o Postgres sobe um
+# servidor temporário só no socket local, e o check não deve dar "pronto" antes do servidor definitivo.
 x-db-healthcheck: &db-healthcheck
-  test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+  test: ["CMD-SHELL", "pg_isready -h localhost -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
   interval: 5s
   timeout: 5s
   retries: 10
   start_period: 10s
+
+# Healthcheck comum às APIs: GET /health/ready (inclui o banco). A imagem aspnet não tem curl/wget,
+# então a requisição HTTP é feita com o /dev/tcp do bash.
+x-api-healthcheck: &api-healthcheck
+  test:
+    - CMD
+    - bash
+    - -c
+    - "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && head -n 1 <&3 | grep -q ' 200 '"
+  interval: 5s
+  timeout: 5s
+  retries: 12
+  start_period: 20s
 
 services:
   # ---------------------------------------------------------------- bancos
@@ -65,6 +79,7 @@ services:
     depends_on:
       rates-db:
         condition: service_healthy
+    healthcheck: *api-healthcheck
     networks: [rates-net, backend]
 
   payments-api:
@@ -77,6 +92,7 @@ services:
     depends_on:
       payments-db:
         condition: service_healthy
+    healthcheck: *api-healthcheck
     networks: [payments-net, backend]
 
   orders-api:
@@ -95,6 +111,7 @@ services:
         condition: service_started
       payments-api:
         condition: service_started
+    healthcheck: *api-healthcheck
     networks: [orders-net, backend, frontend]
 
   # ---------------------------------------------------------------- frontend
@@ -106,6 +123,12 @@ services:
       - "3000:8080"
     depends_on:
       - orders-api
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/healthz"]
+      interval: 5s
+      timeout: 5s
+      retries: 6
+      start_period: 5s
     networks: [frontend]
 
 # Cada banco só é visível para a sua API; as APIs se falam pela "backend";

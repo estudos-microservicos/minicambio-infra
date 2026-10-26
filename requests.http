@@ -1,0 +1,187 @@
+# Coleção de requisições do MiniCâmbio (VS Code REST Client, JetBrains HTTP Client ou Visual Studio).
+# Suba o ambiente antes: docker compose up --build -d
+
+@orders = http://localhost:5000
+@rates = http://localhost:5001
+@payments = http://localhost:5002
+@web = http://localhost:3000
+
+######################################################################## Rates
+
+### Lista as taxas de todas as moedas (variação de ±1% a cada chamada)
+GET {{rates}}/api/v1/rates
+
+### Taxa de uma moeda
+GET {{rates}}/api/v1/rates/USD
+
+### Moeda inexistente → 404
+GET {{rates}}/api/v1/rates/XYZ
+
+### Emite uma cotação (válida por 60 s)
+# @name quote
+POST {{rates}}/api/v1/quotes
+Content-Type: application/json
+X-Correlation-Id: requests-http-quote
+
+{
+  "currency": "USD",
+  "side": "Buy",
+  "foreignAmount": 1000.00
+}
+
+### Consulta a cotação emitida acima (isExpired vira true depois de 60 s)
+GET {{rates}}/api/v1/quotes/{{quote.response.body.$.id}}
+
+### Cotação inválida → 400 com erros por campo
+POST {{rates}}/api/v1/quotes
+Content-Type: application/json
+
+{
+  "currency": "usd",
+  "side": "Hold",
+  "foreignAmount": 0
+}
+
+### Moeda não suportada → 422
+POST {{rates}}/api/v1/quotes
+Content-Type: application/json
+
+{
+  "currency": "XYZ",
+  "side": "Sell",
+  "foreignAmount": 10
+}
+
+######################################################################## Payments
+# Normalmente quem chama o Payments é o Orders; aqui dá para exercitar o serviço isolado.
+
+### Solicita um pagamento → 202 Pending (repetir com o mesmo orderId devolve 200 com o mesmo pagamento)
+# @name payment
+POST {{payments}}/api/v1/payments
+Content-Type: application/json
+
+{
+  "orderId": "0192f0c4-1111-7000-8000-000000000001",
+  "currency": "USD",
+  "foreignAmount": 1000.00,
+  "beneficiary": {
+    "name": "Maria Silva",
+    "country": "BR",
+    "accountNumber": "123456789"
+  }
+}
+
+### Consulta o pagamento (Pending → Processing → Completed em alguns segundos)
+GET {{payments}}/api/v1/payments/{{payment.response.body.$.id}}
+
+### Consulta o pagamento de uma ordem
+GET {{payments}}/api/v1/payments?orderId=0192f0c4-1111-7000-8000-000000000001
+
+### Pagamento que o mock recusa (nome contém FAIL → BENEFICIARY_REJECTED)
+POST {{payments}}/api/v1/payments
+Content-Type: application/json
+
+{
+  "orderId": "{{$guid}}",
+  "currency": "EUR",
+  "foreignAmount": 50.00,
+  "beneficiary": {
+    "name": "FAIL Teste",
+    "country": "PT",
+    "accountNumber": "PT50000201231234567890154"
+  }
+}
+
+######################################################################## Orders
+
+### Cria uma ordem (fica Quoted por 60 s)
+# @name order
+POST {{orders}}/api/v1/orders
+Content-Type: application/json
+Idempotency-Key: {{$guid}}
+
+{
+  "currency": "USD",
+  "side": "Buy",
+  "foreignAmount": 1000.00,
+  "beneficiary": {
+    "name": "Maria Silva",
+    "country": "BR",
+    "accountNumber": "123456789"
+  }
+}
+
+### Consulta a ordem (canConfirm/canCancel dizem quais ações são possíveis)
+GET {{orders}}/api/v1/orders/{{order.response.body.$.id}}
+
+### Confirma a ordem → solicita o pagamento (PaymentRequested → Completed)
+POST {{orders}}/api/v1/orders/{{order.response.body.$.id}}/confirm
+
+### Cancela a ordem → 204 (só enquanto Quoted; depois de confirmada → 422)
+DELETE {{orders}}/api/v1/orders/{{order.response.body.$.id}}
+
+### Lista paginada, da mais recente para a mais antiga
+GET {{orders}}/api/v1/orders?page=1&pageSize=20
+
+### Lista filtrada por status
+GET {{orders}}/api/v1/orders?status=Completed&page=1&pageSize=10
+
+### Sem Idempotency-Key → 400
+POST {{orders}}/api/v1/orders
+Content-Type: application/json
+
+{
+  "currency": "USD",
+  "side": "Buy",
+  "foreignAmount": 10,
+  "beneficiary": { "name": "Maria Silva", "country": "BR", "accountNumber": "123" }
+}
+
+### Mesma Idempotency-Key duas vezes → a segunda devolve 200 com a mesma ordem
+POST {{orders}}/api/v1/orders
+Content-Type: application/json
+Idempotency-Key: requests-http-idempotente-1
+
+{
+  "currency": "EUR",
+  "side": "Sell",
+  "foreignAmount": 250.50,
+  "beneficiary": { "name": "João Souza", "country": "PT", "accountNumber": "PT50000201231234567890154" }
+}
+
+### Moeda não suportada pelo Rates → 422
+POST {{orders}}/api/v1/orders
+Content-Type: application/json
+Idempotency-Key: {{$guid}}
+
+{
+  "currency": "XYZ",
+  "side": "Buy",
+  "foreignAmount": 10,
+  "beneficiary": { "name": "Maria Silva", "country": "BR", "accountNumber": "123" }
+}
+
+######################################################################## Health checks
+
+### Live (sem dependências)
+GET {{orders}}/health/live
+
+### Ready (inclui o banco)
+GET {{orders}}/health/ready
+
+### Rates ready
+GET {{rates}}/health/ready
+
+### Payments ready
+GET {{payments}}/health/ready
+
+######################################################################## Web (nginx)
+
+### Health do container web
+GET {{web}}/healthz
+
+### Proxy do nginx para o Orders
+GET {{web}}/api/v1/orders
+
+### Fallback de SPA (devolve o index.html)
+GET {{web}}/orders/qualquer-coisa
