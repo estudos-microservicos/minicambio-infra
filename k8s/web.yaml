@@ -1,0 +1,50 @@
+# Passo 10: o frontend (equivalente ao serviço web do docker-compose.yml).
+# - Deployment: nginx com o build do React; encaminha /api para o Service "orders-api" (ORDERS_API_URL).
+# - Service do tipo LoadBalancer: abre o acesso de fora do cluster. No Docker Desktop ele publica em
+#   localhost:3000, como o ports: "3000:8080" do compose; numa nuvem criaria um balanceador com IP público.
+# Ainda provisório: a imagem só existe no Docker local (imagePullPolicy: Never); sem probes (o /healthz do nginx
+# vira liveness/readiness).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: minicambio
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      containers:
+        - name: nginx
+          image: minicambio-web:latest
+          imagePullPolicy: Never # usa só a imagem do Docker local; nunca tenta baixar de um registry
+          env:
+            - name: ORDERS_API_URL
+              value: http://orders-api:8080 # nome do Service do Orders
+          ports:
+            - containerPort: 8080
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  namespace: minicambio
+spec:
+  type: LoadBalancer # o padrão (ClusterIP) só é acessível de dentro do cluster
+  selector:
+    app: web
+  ports:
+    - port: 3000 # porta acessível de fora: http://localhost:3000
+      targetPort: 8080 # porta do nginx no container

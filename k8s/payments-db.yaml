@@ -1,0 +1,49 @@
+# Passo 8: o Postgres do Payments (equivalente ao serviço payments-db do docker-compose.yml).
+# Mesmo padrão do rates-db.yaml: Deployment (mantém 1 Pod rodando) + Service (endereço fixo "payments-db").
+# Ainda provisório: a senha em texto (vira Secret) e os dados, que somem junto com o Pod (vira disco persistente).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payments-db
+  namespace: minicambio
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: payments-db
+  template:
+    metadata:
+      labels:
+        app: payments-db
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:17-alpine
+          env:
+            - name: POSTGRES_DB
+              value: payments
+            - name: POSTGRES_USER
+              value: payments
+            - name: POSTGRES_PASSWORD
+              value: provisorio # só por enquanto; sai daqui quando chegarmos no Secret
+          ports:
+            - containerPort: 5432
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payments-db # a API usa Host=payments-db
+  namespace: minicambio
+spec:
+  selector:
+    app: payments-db
+  ports:
+    - port: 5432
+      targetPort: 5432

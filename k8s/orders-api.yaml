@@ -1,0 +1,57 @@
+# Passo 9: a API do Orders (equivalente ao serviço orders-api do docker-compose.yml).
+# Mesmo padrão do rates-api.yaml, com uma diferença: o Orders chama o Rates e o Payments pelos nomes dos Services
+# deles (rates-api e payments-api). O Service "orders-api" é o endereço que o web (nginx) vai usar.
+# Ainda provisório: a senha em texto na connection string (vira Secret); a imagem só existe no Docker local
+# (imagePullPolicy: Never); as migrations rodam na subida da API, o que só é seguro com 1 réplica (vira Job ou
+# init container); sem probes (o healthcheck do compose vira liveness/readiness).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orders-api
+  namespace: minicambio
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: orders-api
+  template:
+    metadata:
+      labels:
+        app: orders-api
+    spec:
+      containers:
+        - name: api
+          image: minicambio-orders-api:latest
+          imagePullPolicy: Never # usa só a imagem do Docker local; nunca tenta baixar de um registry
+          env:
+            - name: ASPNETCORE_ENVIRONMENT
+              value: Development # igual ao compose: habilita a documentação em /scalar
+            - name: Database__ApplyMigrationsOnStartup
+              value: "true"
+            - name: ConnectionStrings__Default
+              value: Host=orders-db;Port=5432;Database=orders;Username=orders;Password=provisorio # Host = nome do Service do banco
+            - name: Services__RatesApi
+              value: http://rates-api:8080 # nome do Service do Rates
+            - name: Services__PaymentsApi
+              value: http://payments-api:8080 # nome do Service do Payments
+          ports:
+            - containerPort: 8080
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: orders-api
+  namespace: minicambio
+spec:
+  selector:
+    app: orders-api
+  ports:
+    - port: 8080
+      targetPort: 8080

@@ -1,0 +1,50 @@
+# Passo 6: o Postgres do Rates (equivalente ao serviço rates-db do docker-compose.yml).
+# - Deployment (Passo 4): garante que exista sempre 1 Pod rodando; se o Pod sumir, ele cria outro.
+# - Service (Passo 6): dá ao banco o endereço fixo "rates-db", como o nome do serviço no compose.
+# Ainda provisório: a senha em texto (vira Secret) e os dados, que somem junto com o Pod (vira disco persistente).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rates-db
+  namespace: minicambio
+spec:
+  replicas: 1 # quantos Pods devem existir
+  selector:
+    matchLabels: # como o Deployment reconhece os Pods dele: pela etiqueta app=rates-db
+      app: rates-db
+  template: # o modelo de cada Pod que o Deployment cria; o conteúdo é o Pod do Passo 1
+    metadata:
+      labels:
+        app: rates-db # tem que bater com o selector acima
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:17-alpine
+          env:
+            - name: POSTGRES_DB
+              value: rates
+            - name: POSTGRES_USER
+              value: rates
+            - name: POSTGRES_PASSWORD
+              value: provisorio # só por enquanto; sai daqui quando chegarmos no Secret
+          ports:
+            - containerPort: 5432
+          resources:
+            requests: # o mínimo reservado: o scheduler só coloca o Pod num nó que tenha isso livre
+              cpu: 100m
+              memory: 256Mi
+            limits: # o teto: acima da memória o container é morto (OOMKilled); na CPU ele só fica mais lento
+              cpu: 500m
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rates-db # vira o endereço do banco: a API vai usar Host=rates-db, igual no compose
+  namespace: minicambio
+spec:
+  selector:
+    app: rates-db # encaminha para os Pods com esta etiqueta (a mesma do Deployment)
+  ports:
+    - port: 5432 # porta em que o Service atende
+      targetPort: 5432 # porta do container para onde ele encaminha

@@ -1,0 +1,53 @@
+# Passo 7: a API do Rates (equivalente ao serviço rates-api do docker-compose.yml).
+# - Deployment: roda a imagem minicambio-rates-api que o "docker compose build" já gerou no Docker local.
+# - Service: dá à API o endereço fixo "rates-api", que o Orders vai usar (Services__RatesApi=http://rates-api:8080).
+# Ainda provisório: a senha em texto na connection string (vira Secret); a imagem só existe no Docker local
+# (imagePullPolicy: Never); as migrations rodam na subida da API, o que só é seguro com 1 réplica (vira Job ou
+# init container); sem probes (o healthcheck do compose vira liveness/readiness).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rates-api
+  namespace: minicambio
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rates-api
+  template:
+    metadata:
+      labels:
+        app: rates-api
+    spec:
+      containers:
+        - name: api
+          image: minicambio-rates-api:latest
+          imagePullPolicy: Never # usa só a imagem do Docker local; nunca tenta baixar de um registry
+          env:
+            - name: ASPNETCORE_ENVIRONMENT
+              value: Development # igual ao compose: habilita a documentação em /scalar
+            - name: Database__ApplyMigrationsOnStartup
+              value: "true"
+            - name: ConnectionStrings__Default
+              value: Host=rates-db;Port=5432;Database=rates;Username=rates;Password=provisorio # Host = nome do Service do banco
+          ports:
+            - containerPort: 8080
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rates-api
+  namespace: minicambio
+spec:
+  selector:
+    app: rates-api
+  ports:
+    - port: 8080
+      targetPort: 8080
