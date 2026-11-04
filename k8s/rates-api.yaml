@@ -6,13 +6,16 @@
 # (imagePullPolicy: Never); as migrations rodam na subida da API, o que só é seguro com 1 réplica (vira Job ou
 # init container).
 # - Probes (Passo 13): readiness em /health/ready e liveness em /health/live (o healthcheck do compose).
+# - Réplicas (Passo 14): 3 Pods atrás do mesmo Service. As tabelas já existem, então os Pods novos não encontram
+#   migration pendente; a migration na subida continua provisória.
+# - NetworkPolicy (Passo 15.3): a rede backend do compose; só o orders-api entra na porta 8080.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: rates-api
   namespace: minicambio
 spec:
-  replicas: 1
+  replicas: 3 # o Deployment mantém 3 Pods iguais; o Service divide as requisições entre eles
   selector:
     matchLabels:
       app: rates-api
@@ -70,3 +73,22 @@ spec:
   ports:
     - port: 8080
       targetPort: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: rates-api
+  namespace: minicambio
+spec:
+  podSelector: # a quem a regra se aplica: aos Pods desta API
+    matchLabels:
+      app: rates-api
+  policyTypes:
+    - Ingress # só o que ENTRA; a saída continua livre (a API ainda alcança o próprio banco e o DNS)
+  ingress:
+    - from:
+        - podSelector: # só o Orders chama o Rates (cotação ao criar a ordem)
+            matchLabels:
+              app: orders-api
+      ports:
+        - port: 8080

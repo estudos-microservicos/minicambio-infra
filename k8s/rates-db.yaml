@@ -6,6 +6,7 @@
 # - PersistentVolumeClaim (Passo 12): o disco dos dados, que sobrevive ao Pod; equivale ao volume nomeado
 #   rates-db-data do compose.
 # - Probes (Passo 13.2): do tipo exec, com o pg_isready do healthcheck do compose.
+# - NetworkPolicy (Passo 15.2): a rede rates-net do compose; só o rates-api entra na porta 5432.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -91,3 +92,22 @@ spec:
     requests:
       storage: 1Gi
   # sem storageClassName: usa o StorageClass padrão do cluster (no Docker Desktop, o "hostpath")
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: rates-db
+  namespace: minicambio
+spec:
+  podSelector: # a quem a regra se aplica: aos Pods do banco
+    matchLabels:
+      app: rates-db
+  policyTypes:
+    - Ingress # regula só o que ENTRA nesses Pods; a partir daqui, entrada não listada abaixo é bloqueada
+  ingress:
+    - from:
+        - podSelector: # quem pode entrar: Pods com esta label, no mesmo namespace
+            matchLabels:
+              app: rates-api
+      ports:
+        - port: 5432

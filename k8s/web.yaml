@@ -3,6 +3,7 @@
 # - Service do tipo LoadBalancer: abre o acesso de fora do cluster. No Docker Desktop ele publica em
 #   localhost:3000, como o ports: "3000:8080" do compose; numa nuvem criaria um balanceador com IP público.
 # - Probes (Passo 13.2): readiness e liveness no /healthz do nginx, que responde 200 sem depender do Orders.
+# - Réplicas (Passo 14): 3 Pods de nginx, que não guardam estado; o LoadBalancer divide o localhost:3000 entre eles.
 # Ainda provisório: a imagem só existe no Docker local (imagePullPolicy: Never).
 apiVersion: apps/v1
 kind: Deployment
@@ -10,7 +11,7 @@ metadata:
   name: web
   namespace: minicambio
 spec:
-  replicas: 1
+  replicas: 3 # nginx não guarda estado, então qualquer Pod atende qualquer requisição
   selector:
     matchLabels:
       app: web

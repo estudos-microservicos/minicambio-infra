@@ -3,6 +3,7 @@
 # Passo 11: a senha vem do Secret "payments-db" (definido em secrets.yaml, fora do git).
 # Passo 12: os dados ficam no PersistentVolumeClaim "payments-db-data" (o volume payments-db-data do compose).
 # Passo 13.2: probes do tipo exec com pg_isready, como no rates-db.yaml.
+# Passo 15.2: NetworkPolicy "payments-db" (a rede payments-net do compose): só o payments-api entra na porta 5432.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -85,3 +86,22 @@ spec:
   resources:
     requests:
       storage: 1Gi
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: payments-db
+  namespace: minicambio
+spec:
+  podSelector: # a quem a regra se aplica: aos Pods do banco
+    matchLabels:
+      app: payments-db
+  policyTypes:
+    - Ingress # regula só o que ENTRA nesses Pods; a partir daqui, entrada não listada abaixo é bloqueada
+  ingress:
+    - from:
+        - podSelector: # quem pode entrar: Pods com esta label, no mesmo namespace
+            matchLabels:
+              app: payments-api
+      ports:
+        - port: 5432
