@@ -2,8 +2,8 @@
 # - Deployment: nginx com o build do React; encaminha /api para o Service "orders-api" (ORDERS_API_URL).
 # - Service do tipo LoadBalancer: abre o acesso de fora do cluster. No Docker Desktop ele publica em
 #   localhost:3000, como o ports: "3000:8080" do compose; numa nuvem criaria um balanceador com IP público.
-# Ainda provisório: a imagem só existe no Docker local (imagePullPolicy: Never); sem probes (o /healthz do nginx
-# vira liveness/readiness).
+# - Probes (Passo 13.2): readiness e liveness no /healthz do nginx, que responde 200 sem depender do Orders.
+# Ainda provisório: a imagem só existe no Docker local (imagePullPolicy: Never).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -28,6 +28,18 @@ spec:
               value: http://orders-api:8080 # nome do Service do Orders
           ports:
             - containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            periodSeconds: 10
+            failureThreshold: 3
           resources:
             requests:
               cpu: 50m

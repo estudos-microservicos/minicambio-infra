@@ -5,6 +5,7 @@
 #   .env do compose.
 # - PersistentVolumeClaim (Passo 12): o disco dos dados, que sobrevive ao Pod; equivale ao volume nomeado
 #   rates-db-data do compose.
+# - Probes (Passo 13.2): do tipo exec, com o pg_isready do healthcheck do compose.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -39,6 +40,18 @@ spec:
               value: /var/lib/postgresql/data/pgdata
           ports:
             - containerPort: 5432
+          readinessProbe: # o Service só manda conexões quando o Postgres aceita conexões
+            exec: # o kubelet roda o comando dentro do container: código de saída 0 = passou
+              # -h localhost força TCP: na inicialização o Postgres sobe um servidor temporário só no socket local,
+              # e o teste não deve dar "pronto" antes do servidor definitivo (mesmo motivo do compose)
+              command: ["pg_isready", "-h", "localhost", "-U", "rates", "-d", "rates"]
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe: # mesmo teste, mais tolerante: reiniciar um banco é caro, só depois de 1 minuto sem resposta
+            exec:
+              command: ["pg_isready", "-h", "localhost", "-U", "rates", "-d", "rates"]
+            periodSeconds: 10
+            failureThreshold: 6
           volumeMounts: # onde o disco aparece dentro do container (o lado direito do volume no compose)
             - name: dados # o nome do volume declarado lá embaixo, em "volumes"
               mountPath: /var/lib/postgresql/data

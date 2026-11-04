@@ -2,6 +2,7 @@
 # Mesmo padrão do rates-db.yaml: Deployment (mantém 1 Pod rodando) + Service (endereço fixo "payments-db").
 # Passo 11: a senha vem do Secret "payments-db" (definido em secrets.yaml, fora do git).
 # Passo 12: os dados ficam no PersistentVolumeClaim "payments-db-data" (o volume payments-db-data do compose).
+# Passo 13.2: probes do tipo exec com pg_isready, como no rates-db.yaml.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -36,6 +37,16 @@ spec:
               value: /var/lib/postgresql/data/pgdata
           ports:
             - containerPort: 5432
+          readinessProbe: # mesmas probes do rates-db.yaml
+            exec:
+              command: ["pg_isready", "-h", "localhost", "-U", "payments", "-d", "payments"]
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-h", "localhost", "-U", "payments", "-d", "payments"]
+            periodSeconds: 10
+            failureThreshold: 6
           volumeMounts:
             - name: dados
               mountPath: /var/lib/postgresql/data
