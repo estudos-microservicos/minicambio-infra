@@ -1,0 +1,41 @@
+# Passo 16.3: as migrations do Rates num Job, separadas da API.
+# - No compose não há equivalente: lá a própria API migra na subida (Database__ApplyMigrationsOnStartup=true).
+# - Job: cria um Pod que roda a tarefa até o fim e termina. Diferente do Deployment, que mantém o Pod sempre no ar,
+#   o Job considera "Completed" o Pod que sai com código 0 e só cria outro se ele falhar.
+# - Usa a mesma imagem da API com o argumento --migrate-only: aplica as migrations e encerra, sem subir o HTTP.
+# - Label própria (app: rates-migrations): com app: rates-api, o Service da API mandaria requisições para este Pod.
+#   Por isso a NetworkPolicy do rates-db libera também esta label.
+# - Passo 16.4: o Deployment do rates-api deixou de migrar; o Job passou a ser o único a aplicar migrations.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: rates-migrations
+  namespace: minicambio
+spec:
+  backoffLimit: 4 # até 4 novas tentativas (um Pod novo por falha) antes de marcar o Job como Failed
+  template:
+    metadata:
+      labels:
+        app: rates-migrations
+    spec:
+      restartPolicy: Never # num Job só vale Never ou OnFailure; Never cria um Pod novo a cada falha (dá para ver os logs de cada um)
+      containers:
+        - name: migrations
+          image: minicambio-rates-api:latest
+          imagePullPolicy: Never
+          args: ["--migrate-only"] # acrescentado ao ENTRYPOINT da imagem: dotnet MiniCambio.Rates.Api.dll --migrate-only
+          env:
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: rates-db
+                  key: password
+            - name: ConnectionStrings__Default
+              value: Host=rates-db;Port=5432;Database=rates;Username=rates;Password=$(DB_PASSWORD)
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi

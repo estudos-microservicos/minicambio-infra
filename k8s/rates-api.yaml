@@ -2,12 +2,11 @@
 # - Deployment: roda a imagem minicambio-rates-api que o "docker compose build" já gerou no Docker local.
 # - Service: dá à API o endereço fixo "rates-api", que o Orders vai usar (Services__RatesApi=http://rates-api:8080).
 # - Secret (Passo 11): a senha do banco vem do Secret "rates-db" e entra na connection string via $(DB_PASSWORD).
-# Ainda provisório: a imagem só existe no Docker local
-# (imagePullPolicy: Never); as migrations rodam na subida da API, o que só é seguro com 1 réplica (vira Job ou
-# init container).
+# Ainda provisório: a imagem só existe no Docker local (imagePullPolicy: Never).
 # - Probes (Passo 13): readiness em /health/ready e liveness em /health/live (o healthcheck do compose).
-# - Réplicas (Passo 14): 3 Pods atrás do mesmo Service. As tabelas já existem, então os Pods novos não encontram
-#   migration pendente; a migration na subida continua provisória.
+# - Réplicas (Passo 14): 3 Pods atrás do mesmo Service.
+# - Migrations (Passo 16.4): saíram da API (Database__ApplyMigrationsOnStartup=false) e rodam no Job
+#   rates-migrations, que precisa terminar antes de a API subir com uma versão nova do banco.
 # - NetworkPolicy (Passo 15.3): a rede backend do compose; só o orders-api entra na porta 8080.
 apiVersion: apps/v1
 kind: Deployment
@@ -31,8 +30,8 @@ spec:
           env:
             - name: ASPNETCORE_ENVIRONMENT
               value: Development # igual ao compose: habilita a documentação em /scalar
-            - name: Database__ApplyMigrationsOnStartup
-              value: "true"
+            - name: Database__ApplyMigrationsOnStartup # quem migra é o Job rates-migrations; o "false" explícito
+              value: "false" # vence o "true" do appsettings.Development.json, que o Development acima carrega
             - name: DB_PASSWORD # tem que vir antes: $(...) só enxerga variáveis declaradas acima dela
               valueFrom:
                 secretKeyRef:

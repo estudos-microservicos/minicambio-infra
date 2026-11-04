@@ -4,6 +4,7 @@
 # Passo 12: os dados ficam no PersistentVolumeClaim "orders-db-data" (o volume orders-db-data do compose).
 # Passo 13.2: probes do tipo exec com pg_isready, como no rates-db.yaml.
 # Passo 15.2: NetworkPolicy "orders-db" (a rede orders-net do compose): só o orders-api entra na porta 5432.
+#   No Passo 16.5, o Job orders-migrations também passou a entrar.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -103,5 +104,8 @@ spec:
         - podSelector: # quem pode entrar: Pods com esta label, no mesmo namespace
             matchLabels:
               app: orders-api
+        - podSelector: # Passo 16.5: o Job de migração também precisa chegar ao banco
+            matchLabels:
+              app: orders-migrations
       ports:
         - port: 5432

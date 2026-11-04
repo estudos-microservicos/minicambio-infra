@@ -1,0 +1,37 @@
+# Passo 16.5: as migrations do Payments num Job, mesmo padrão do rates-migrations.yaml (ver os comentários de lá).
+# - Usa a imagem da API com --migrate-only: aplica as migrations e encerra, sem subir o HTTP nem o worker.
+# - Label própria (app: payments-migrations), liberada na NetworkPolicy do payments-db.
+# - O Deployment do payments-api não migra mais (Database__ApplyMigrationsOnStartup=false).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: payments-migrations
+  namespace: minicambio
+spec:
+  backoffLimit: 4 # até 4 novas tentativas (um Pod novo por falha) antes de marcar o Job como Failed
+  template:
+    metadata:
+      labels:
+        app: payments-migrations
+    spec:
+      restartPolicy: Never # num Job só vale Never ou OnFailure; Never cria um Pod novo a cada falha (dá para ver os logs de cada um)
+      containers:
+        - name: migrations
+          image: minicambio-payments-api:latest
+          imagePullPolicy: Never
+          args: ["--migrate-only"] # acrescentado ao ENTRYPOINT da imagem: dotnet MiniCambio.Payments.Api.dll --migrate-only
+          env:
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: payments-db
+                  key: password
+            - name: ConnectionStrings__Default
+              value: Host=payments-db;Port=5432;Database=payments;Username=payments;Password=$(DB_PASSWORD)
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi

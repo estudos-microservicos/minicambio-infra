@@ -7,6 +7,7 @@
 #   rates-db-data do compose.
 # - Probes (Passo 13.2): do tipo exec, com o pg_isready do healthcheck do compose.
 # - NetworkPolicy (Passo 15.2): a rede rates-net do compose; só o rates-api entra na porta 5432.
+#   No Passo 16.3, o Job rates-migrations também passou a entrar.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -109,5 +110,8 @@ spec:
         - podSelector: # quem pode entrar: Pods com esta label, no mesmo namespace
             matchLabels:
               app: rates-api
+        - podSelector: # Passo 16.3: o Job de migração também precisa chegar ao banco
+            matchLabels:
+              app: rates-migrations
       ports:
         - port: 5432

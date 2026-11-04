@@ -2,13 +2,12 @@
 # Mesmo padrão do rates-api.yaml, com uma diferença: o Orders chama o Rates e o Payments pelos nomes dos Services
 # deles (rates-api e payments-api). O Service "orders-api" é o endereço que o web (nginx) vai usar.
 # Passo 11: a senha do banco vem do Secret "orders-db" e entra na connection string via $(DB_PASSWORD).
-# Ainda provisório: a imagem só existe no Docker local
-# (imagePullPolicy: Never); as migrations rodam na subida da API, o que só é seguro com 1 réplica (vira Job ou
-# init container).
+# Ainda provisório: a imagem só existe no Docker local (imagePullPolicy: Never).
 # Passo 13: probes de readiness (/health/ready) e liveness (/health/live), como no rates-api.yaml.
 # Passo 14: 3 réplicas, como no rates-api.yaml. O worker roda em cada Pod e o SELECT ... FOR UPDATE SKIP LOCKED
 # impede que dois Pods processem o mesmo registro.
 # Passo 15.3: NetworkPolicy "orders-api" (a rede frontend do compose): só o web entra na porta 8080.
+# Passo 16.5: migrations fora da API (Database__ApplyMigrationsOnStartup=false), no Job orders-migrations.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -31,8 +30,8 @@ spec:
           env:
             - name: ASPNETCORE_ENVIRONMENT
               value: Development # igual ao compose: habilita a documentação em /scalar
-            - name: Database__ApplyMigrationsOnStartup
-              value: "true"
+            - name: Database__ApplyMigrationsOnStartup # quem migra é o Job orders-migrations; o "false" explícito
+              value: "false" # vence o "true" do appsettings.Development.json, que o Development acima carrega
             - name: DB_PASSWORD # tem que vir antes da connection string, que a usa via $(DB_PASSWORD)
               valueFrom:
                 secretKeyRef:
