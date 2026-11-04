@@ -1,9 +1,11 @@
 # Passo 8: a API do Payments (equivalente ao serviço payments-api do docker-compose.yml).
 # Mesmo padrão do rates-api.yaml: Deployment com a imagem do Docker local + Service com o endereço fixo
 # "payments-api", que o Orders vai usar (Services__PaymentsApi=http://payments-api:8080).
-# Ainda provisório: a senha em texto na connection string (vira Secret); a imagem só existe no Docker local
+# Passo 11: a senha do banco vem do Secret "payments-db" e entra na connection string via $(DB_PASSWORD).
+# Ainda provisório: a imagem só existe no Docker local
 # (imagePullPolicy: Never); as migrations rodam na subida da API, o que só é seguro com 1 réplica (vira Job ou
-# init container); sem probes (o healthcheck do compose vira liveness/readiness).
+# init container).
+# Passo 13: probes de readiness (/health/ready) e liveness (/health/live), como no rates-api.yaml.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -28,10 +30,27 @@ spec:
               value: Development # igual ao compose: habilita a documentação em /scalar
             - name: Database__ApplyMigrationsOnStartup
               value: "true"
-            - name: ConnectionStrings__Default
-              value: Host=payments-db;Port=5432;Database=payments;Username=payments;Password=provisorio # Host = nome do Service do banco
+            - name: DB_PASSWORD # tem que vir antes da connection string, que a usa via $(DB_PASSWORD)
+              valueFrom:
+                secretKeyRef:
+                  name: payments-db
+                  key: password
+            - name: ConnectionStrings__Default # Host = nome do Service do banco
+              value: Host=payments-db;Port=5432;Database=payments;Username=payments;Password=$(DB_PASSWORD)
           ports:
             - containerPort: 8080
+          readinessProbe: # mesmas probes do rates-api.yaml
+            httpGet:
+              path: /health/ready
+              port: 8080
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 8080
+            periodSeconds: 10
+            failureThreshold: 3
           resources:
             requests:
               cpu: 100m

@@ -1,6 +1,9 @@
 # Variáveis de ambiente locais (credenciais dos bancos)
 .env
 
+# Secrets do Kubernetes com as senhas reais (o modelo versionado é k8s/secrets.yaml.example)
+k8s/secrets.yaml
+
 # Editores e sistema operacional
 .vs/
 .vscode/*

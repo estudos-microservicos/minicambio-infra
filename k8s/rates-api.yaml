@@ -1,9 +1,11 @@
 # Passo 7: a API do Rates (equivalente ao serviço rates-api do docker-compose.yml).
 # - Deployment: roda a imagem minicambio-rates-api que o "docker compose build" já gerou no Docker local.
 # - Service: dá à API o endereço fixo "rates-api", que o Orders vai usar (Services__RatesApi=http://rates-api:8080).
-# Ainda provisório: a senha em texto na connection string (vira Secret); a imagem só existe no Docker local
+# - Secret (Passo 11): a senha do banco vem do Secret "rates-db" e entra na connection string via $(DB_PASSWORD).
+# Ainda provisório: a imagem só existe no Docker local
 # (imagePullPolicy: Never); as migrations rodam na subida da API, o que só é seguro com 1 réplica (vira Job ou
-# init container); sem probes (o healthcheck do compose vira liveness/readiness).
+# init container).
+# - Probes (Passo 13): readiness em /health/ready e liveness em /health/live (o healthcheck do compose).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -28,10 +30,27 @@ spec:
               value: Development # igual ao compose: habilita a documentação em /scalar
             - name: Database__ApplyMigrationsOnStartup
               value: "true"
-            - name: ConnectionStrings__Default
-              value: Host=rates-db;Port=5432;Database=rates;Username=rates;Password=provisorio # Host = nome do Service do banco
+            - name: DB_PASSWORD # tem que vir antes: $(...) só enxerga variáveis declaradas acima dela
+              valueFrom:
+                secretKeyRef:
+                  name: rates-db
+                  key: password
+            - name: ConnectionStrings__Default # Host = nome do Service do banco; $(DB_PASSWORD) é trocado pelo valor acima
+              value: Host=rates-db;Port=5432;Database=rates;Username=rates;Password=$(DB_PASSWORD)
           ports:
             - containerPort: 8080
+          readinessProbe: # "posso receber requisições?"; se falhar, o Service tira o Pod da lista, sem reiniciar
+            httpGet: # quem faz a requisição é o kubelet, de fora do container
+              path: /health/ready # inclui o banco: sem banco, a API sai da lista do Service
+              port: 8080
+            periodSeconds: 5 # testa a cada 5 s
+            failureThreshold: 3 # 3 falhas seguidas = não pronto
+          livenessProbe: # "estou vivo?"; se falhar, o kubelet reinicia o container
+            httpGet:
+              path: /health/live # não depende do banco: banco fora do ar não é motivo para reiniciar a API
+              port: 8080
+            periodSeconds: 10
+            failureThreshold: 3
           resources:
             requests:
               cpu: 100m

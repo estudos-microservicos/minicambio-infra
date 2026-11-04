@@ -1,7 +1,10 @@
 # Passo 6: o Postgres do Rates (equivalente ao serviço rates-db do docker-compose.yml).
 # - Deployment (Passo 4): garante que exista sempre 1 Pod rodando; se o Pod sumir, ele cria outro.
 # - Service (Passo 6): dá ao banco o endereço fixo "rates-db", como o nome do serviço no compose.
-# Ainda provisório: a senha em texto (vira Secret) e os dados, que somem junto com o Pod (vira disco persistente).
+# - Secret (Passo 11): a senha vem do Secret "rates-db" (definido em secrets.yaml, fora do git); faz o papel do
+#   .env do compose.
+# - PersistentVolumeClaim (Passo 12): o disco dos dados, que sobrevive ao Pod; equivale ao volume nomeado
+#   rates-db-data do compose.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -9,6 +12,8 @@ metadata:
   namespace: minicambio
 spec:
   replicas: 1 # quantos Pods devem existir
+  strategy:
+    type: Recreate # derruba o Pod antigo antes de criar o novo: dois Postgres no mesmo disco corrompem os dados
   selector:
     matchLabels: # como o Deployment reconhece os Pods dele: pela etiqueta app=rates-db
       app: rates-db
@@ -26,9 +31,17 @@ spec:
             - name: POSTGRES_USER
               value: rates
             - name: POSTGRES_PASSWORD
-              value: provisorio # só por enquanto; sai daqui quando chegarmos no Secret
+              valueFrom: # no lugar de "value": o valor vem de outro objeto do cluster
+                secretKeyRef:
+                  name: rates-db # o nome do Secret
+                  key: password # a chave dentro dele
+            - name: PGDATA # os dados numa subpasta do disco: o Postgres exige uma pasta vazia para inicializar
+              value: /var/lib/postgresql/data/pgdata
           ports:
             - containerPort: 5432
+          volumeMounts: # onde o disco aparece dentro do container (o lado direito do volume no compose)
+            - name: dados # o nome do volume declarado lá embaixo, em "volumes"
+              mountPath: /var/lib/postgresql/data
           resources:
             requests: # o mínimo reservado: o scheduler só coloca o Pod num nó que tenha isso livre
               cpu: 100m
@@ -36,6 +49,10 @@ spec:
             limits: # o teto: acima da memória o container é morto (OOMKilled); na CPU ele só fica mais lento
               cpu: 500m
               memory: 512Mi
+      volumes: # os volumes do Pod; aqui, um que aponta para o PVC acima
+        - name: dados
+          persistentVolumeClaim:
+            claimName: rates-db-data
 ---
 apiVersion: v1
 kind: Service
@@ -48,3 +65,16 @@ spec:
   ports:
     - port: 5432 # porta em que o Service atende
       targetPort: 5432 # porta do container para onde ele encaminha
+---
+apiVersion: v1
+kind: PersistentVolumeClaim # um pedido de disco: "quero 1Gi"; o cluster providencia e liga o disco ao pedido
+metadata:
+  name: rates-db-data # o nome que o Deployment usa em "claimName"
+  namespace: minicambio
+spec:
+  accessModes:
+    - ReadWriteOnce # o disco é montado por um nó por vez, com leitura e escrita
+  resources:
+    requests:
+      storage: 1Gi
+  # sem storageClassName: usa o StorageClass padrão do cluster (no Docker Desktop, o "hostpath")
