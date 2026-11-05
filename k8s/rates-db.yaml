@@ -64,7 +64,7 @@ spec:
             limits: # o teto: acima da memória o container é morto (OOMKilled); na CPU ele só fica mais lento
               cpu: 500m
               memory: 512Mi
-      volumes: # os volumes do Pod; aqui, um que aponta para o PVC acima
+      volumes: # os volumes do Pod; aqui, um que aponta para o PVC do fim do arquivo
         - name: dados
           persistentVolumeClaim:
             claimName: rates-db-data
@@ -80,19 +80,6 @@ spec:
   ports:
     - port: 5432 # porta em que o Service atende
       targetPort: 5432 # porta do container para onde ele encaminha
----
-apiVersion: v1
-kind: PersistentVolumeClaim # um pedido de disco: "quero 1Gi"; o cluster providencia e liga o disco ao pedido
-metadata:
-  name: rates-db-data # o nome que o Deployment usa em "claimName"
-  namespace: minicambio
-spec:
-  accessModes:
-    - ReadWriteOnce # o disco é montado por um nó por vez, com leitura e escrita
-  resources:
-    requests:
-      storage: 1Gi
-  # sem storageClassName: usa o StorageClass padrão do cluster (no Docker Desktop, o "hostpath")
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -115,3 +102,16 @@ spec:
               app: rates-migrations
       ports:
         - port: 5432
+---
+apiVersion: v1
+kind: PersistentVolumeClaim # um pedido de disco: "quero 1Gi"; o cluster providencia e liga o disco ao pedido
+metadata:
+  name: rates-db-data # o nome que o Deployment usa em "claimName"
+  namespace: minicambio
+spec:
+  accessModes:
+    - ReadWriteOnce # o disco é montado por um nó por vez, com leitura e escrita
+  resources:
+    requests:
+      storage: 1Gi
+  # sem storageClassName: usa o StorageClass padrão do cluster (no Docker Desktop, o "hostpath")
