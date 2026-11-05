@@ -1,11 +1,13 @@
-# Passo 17.2: a porta de entrada HTTP do cluster.
+# Passos 17 e 18: a porta de entrada HTTP do cluster.
 # - O Ingress é só a regra; quem a executa é o Ingress Controller (ingress-nginx, instalado no Passo 17.1 a partir
 #   do manifest oficial, no namespace ingress-nginx), que atende em localhost:80 pelo próprio Service LoadBalancer.
 # - Equivalente no compose: não existe um recurso igual. Seria um proxy reverso na frente de tudo, com o único
-#   "ports: 80:80", e esta regra seria um "location /" na configuração dele.
-# - Regra única: tudo o que chega (qualquer host, qualquer caminho) vai para o Service "web". O /api continua
-#   sendo encaminhado pelo nginx do próprio web para o orders-api, como antes.
-# - Passo 17.3: o Service "web" virou ClusterIP, então esta é a única entrada de fora para o site.
+#   "ports: 80:80", e cada regra abaixo seria um "server { server_name ...; }" na configuração dele.
+# - Passo 17: a regra sem host manda tudo para o Service "web" (o /api segue pelo nginx do próprio web).
+#   Desde o 17.3 o Service "web" é ClusterIP, então esta é a única entrada de fora para o site.
+# - Passo 18: uma regra por host para cada API, no lugar dos ports 5000/5001/5002 do compose e do port-forward.
+#   O controlador escolhe a regra pelo cabeçalho Host da requisição; o que não casa com nenhum host cai na regra
+#   sem host (o site). Rates e Payments só ficam expostos para estudo: no desenho, só o Orders fala com eles.
 # Ainda provisório: não há HTTPS (seção tls).
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -15,7 +17,7 @@ metadata:
 spec:
   ingressClassName: nginx # qual controlador executa esta regra (kubectl get ingressclass)
   rules:
-    - http: # sem "host:", vale para qualquer nome (localhost, 127.0.0.1...)
+    - http: # sem "host:", vale para qualquer nome que não case com as regras de baixo (localhost, 127.0.0.1...)
         paths:
           - path: /
             pathType: Prefix # "/" como prefixo casa com qualquer caminho: /, /orders, /api/v1/...
@@ -24,3 +26,33 @@ spec:
                 name: web # nome do Service, não do Deployment
                 port:
                   number: 3000 # a "port" do Service web (não o targetPort 8080 do container)
+    - host: orders.localhost # só vale para requisições com "Host: orders.localhost"
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: orders-api
+                port:
+                  number: 8080
+    - host: rates.localhost
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: rates-api
+                port:
+                  number: 8080
+    - host: payments.localhost
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: payments-api
+                port:
+                  number: 8080

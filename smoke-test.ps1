@@ -10,6 +10,10 @@
 
 .EXAMPLE
     ./smoke-test.ps1
+.EXAMPLE
+    ./smoke-test.ps1 -OrdersUrl http://orders.localhost -RatesUrl http://rates.localhost -PaymentsUrl http://payments.localhost -WebUrl http://localhost
+    Contra o Kubernetes, tudo pelo Ingress (k8s/ingress.yaml). No Windows PowerShell 5.1 os nomes
+    *.localhost precisam estar no arquivo hosts (127.0.0.1).
 #>
 [CmdletBinding()]
 param(

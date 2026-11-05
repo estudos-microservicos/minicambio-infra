@@ -7,6 +7,7 @@
 # Passo 14: 3 réplicas, como no rates-api.yaml. O worker roda em cada Pod e o SELECT ... FOR UPDATE SKIP LOCKED
 # impede que dois Pods processem o mesmo registro.
 # Passo 15.3: NetworkPolicy "orders-api" (a rede frontend do compose): só o web entra na porta 8080.
+# Passo 18.3: o controlador do Ingress (namespace ingress-nginx) também entra, para o orders.localhost.
 # Passo 16.5: migrations fora da API (Database__ApplyMigrationsOnStartup=false), no Job orders-migrations.
 apiVersion: apps/v1
 kind: Deployment
@@ -93,5 +94,11 @@ spec:
         - podSelector: # só o nginx do web chama o Orders (o /api do navegador)
             matchLabels:
               app: web
+        - namespaceSelector: # Passo 18.3: o controlador do Ingress, que mora em OUTRO namespace
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx # label que todo namespace recebe sozinho
+          podSelector: # SEM hífen: mesmo item do namespaceSelector, então vale "E" (só o controlador de lá)
+            matchLabels:
+              app.kubernetes.io/component: controller
       ports:
         - port: 8080

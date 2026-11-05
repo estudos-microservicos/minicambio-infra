@@ -8,6 +8,7 @@
 # - Migrations (Passo 16.4): saíram da API (Database__ApplyMigrationsOnStartup=false) e rodam no Job
 #   rates-migrations, que precisa terminar antes de a API subir com uma versão nova do banco.
 # - NetworkPolicy (Passo 15.3): a rede backend do compose; só o orders-api entra na porta 8080.
+#   Passo 18.3: o controlador do Ingress (namespace ingress-nginx) também entra, para o rates.localhost.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -89,5 +90,11 @@ spec:
         - podSelector: # só o Orders chama o Rates (cotação ao criar a ordem)
             matchLabels:
               app: orders-api
+        - namespaceSelector: # Passo 18.3: o controlador do Ingress, que mora em OUTRO namespace
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx # label que todo namespace recebe sozinho
+          podSelector: # SEM hífen: mesmo item do namespaceSelector, então vale "E" (só o controlador de lá)
+            matchLabels:
+              app.kubernetes.io/component: controller
       ports:
         - port: 8080
