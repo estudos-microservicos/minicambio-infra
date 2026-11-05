@@ -1,0 +1,13 @@
+# Passo 19: o namespace do MiniCâmbio, que até aqui existia só porque foi criado à mão
+# (kubectl create namespace minicambio). Agora ele também está declarado em arquivo, como o resto.
+# - Equivalente no compose: o nome do projeto (a pasta minicambio-infra, ou "name:"/"-p"), que agrupa os
+#   containers. A diferença é que o compose cria o projeto sozinho; aqui o namespace precisa existir ANTES de
+#   qualquer outro arquivo ser aplicado, porque todos dizem "namespace: minicambio".
+# - A label kubernetes.io/metadata.name é colocada pelo próprio Kubernetes em todo namespace; não precisa
+#   estar aqui (é a que o namespaceSelector do Passo 18.3 usa para achar o ingress-nginx).
+# Cuidado: apagar o namespace apaga TUDO dentro dele, inclusive os PVCs e os dados dos bancos.
+# "kubectl delete -f k8s/namespace.yaml" equivale a um "docker compose down -v".
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: minicambio # namespace não tem "namespace:": ele é a própria divisão, não fica dentro de outra
