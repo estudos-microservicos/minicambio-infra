@@ -1,9 +1,10 @@
 # Passo 10: o frontend (equivalente ao serviço web do docker-compose.yml).
 # - Deployment: nginx com o build do React; encaminha /api para o Service "orders-api" (ORDERS_API_URL).
-# - Service do tipo LoadBalancer: abre o acesso de fora do cluster. No Docker Desktop ele publica em
-#   localhost:3000, como o ports: "3000:8080" do compose; numa nuvem criaria um balanceador com IP público.
+# - Service ClusterIP (Passo 17.3; até o 17.2 era LoadBalancer em localhost:3000, como o ports: "3000:8080" do
+#   compose): só é acessível de dentro do cluster. Quem vem de fora entra pelo Ingress (k8s/ingress.yaml), em
+#   http://localhost, e o Ingress Controller encaminha para este Service na porta 3000.
 # - Probes (Passo 13.2): readiness e liveness no /healthz do nginx, que responde 200 sem depender do Orders.
-# - Réplicas (Passo 14): 3 Pods de nginx, que não guardam estado; o LoadBalancer divide o localhost:3000 entre eles.
+# - Réplicas (Passo 14): 3 Pods de nginx, que não guardam estado; o Service divide o tráfego entre eles.
 # Ainda provisório: a imagem só existe no Docker local (imagePullPolicy: Never).
 apiVersion: apps/v1
 kind: Deployment
@@ -55,9 +56,9 @@ metadata:
   name: web
   namespace: minicambio
 spec:
-  type: LoadBalancer # o padrão (ClusterIP) só é acessível de dentro do cluster
+  type: ClusterIP # o padrão; escrito para deixar clara a troca: a entrada de fora agora é o Ingress
   selector:
     app: web
   ports:
-    - port: 3000 # porta acessível de fora: http://localhost:3000
+    - port: 3000 # porta do Service dentro do cluster; é a que o Ingress cita em backend.service.port
       targetPort: 8080 # porta do nginx no container

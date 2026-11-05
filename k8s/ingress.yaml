@@ -1,0 +1,26 @@
+# Passo 17.2: a porta de entrada HTTP do cluster.
+# - O Ingress é só a regra; quem a executa é o Ingress Controller (ingress-nginx, instalado no Passo 17.1 a partir
+#   do manifest oficial, no namespace ingress-nginx), que atende em localhost:80 pelo próprio Service LoadBalancer.
+# - Equivalente no compose: não existe um recurso igual. Seria um proxy reverso na frente de tudo, com o único
+#   "ports: 80:80", e esta regra seria um "location /" na configuração dele.
+# - Regra única: tudo o que chega (qualquer host, qualquer caminho) vai para o Service "web". O /api continua
+#   sendo encaminhado pelo nginx do próprio web para o orders-api, como antes.
+# - Passo 17.3: o Service "web" virou ClusterIP, então esta é a única entrada de fora para o site.
+# Ainda provisório: não há HTTPS (seção tls).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: minicambio
+  namespace: minicambio # o Ingress só enxerga Services do próprio namespace
+spec:
+  ingressClassName: nginx # qual controlador executa esta regra (kubectl get ingressclass)
+  rules:
+    - http: # sem "host:", vale para qualquer nome (localhost, 127.0.0.1...)
+        paths:
+          - path: /
+            pathType: Prefix # "/" como prefixo casa com qualquer caminho: /, /orders, /api/v1/...
+            backend:
+              service:
+                name: web # nome do Service, não do Deployment
+                port:
+                  number: 3000 # a "port" do Service web (não o targetPort 8080 do container)
