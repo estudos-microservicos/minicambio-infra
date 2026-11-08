@@ -9,6 +9,8 @@
 #   rates-migrations, que precisa terminar antes de a API subir com uma versão nova do banco.
 # - NetworkPolicy (Passo 15.3): a rede backend do compose; só o orders-api entra na porta 8080.
 #   Passo 18.3: o controlador do Ingress (namespace ingress-nginx) também entra, para o rates.localhost.
+# - ConfigMap (Passo 20): a configuração não sigilosa saiu do "env" para o ConfigMap "rates-api" (fim do arquivo),
+#   lido via envFrom. No "env" ficam só a senha (Secret) e a connection string, que depende dela.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -28,11 +30,10 @@ spec:
         - name: api
           image: minicambio-rates-api:latest
           imagePullPolicy: Never # usa só a imagem do Docker local; nunca tenta baixar de um registry
-          env:
-            - name: ASPNETCORE_ENVIRONMENT
-              value: Development # igual ao compose: habilita a documentação em /scalar
-            - name: Database__ApplyMigrationsOnStartup # quem migra é o Job rates-migrations; o "false" explícito
-              value: "false" # vence o "true" do appsettings.Development.json, que o Development acima carrega
+          envFrom: # cada chave do ConfigMap vira uma variável de ambiente com o mesmo nome
+            - configMapRef:
+                name: rates-api
+          env: # se uma variável aparecer aqui e no ConfigMap, vale a daqui
             - name: DB_PASSWORD # tem que vir antes: $(...) só enxerga variáveis declaradas acima dela
               valueFrom:
                 secretKeyRef:
@@ -98,3 +99,13 @@ spec:
               app.kubernetes.io/component: controller
       ports:
         - port: 8080
+---
+apiVersion: v1
+kind: ConfigMap # o "environment:" do compose, fora do Deployment; o Pod só lê os valores ao subir
+metadata:
+  name: rates-api
+  namespace: minicambio
+data: # só texto: todo valor é string, por isso o "false" vai entre aspas
+  ASPNETCORE_ENVIRONMENT: Development # igual ao compose: habilita a documentação em /scalar
+  # quem migra é o Job rates-migrations; o "false" explícito vence o "true" do appsettings.Development.json
+  Database__ApplyMigrationsOnStartup: "false"

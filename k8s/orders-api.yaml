@@ -9,6 +9,8 @@
 # Passo 15.3: NetworkPolicy "orders-api" (a rede frontend do compose): só o web entra na porta 8080.
 # Passo 18.3: o controlador do Ingress (namespace ingress-nginx) também entra, para o orders.localhost.
 # Passo 16.5: migrations fora da API (Database__ApplyMigrationsOnStartup=false), no Job orders-migrations.
+# Passo 20: a configuração não sigilosa saiu do "env" para o ConfigMap "orders-api" (fim do arquivo), lido via
+# envFrom. No "env" ficam só a senha (Secret) e a connection string, que depende dela via $(DB_PASSWORD).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -28,11 +30,10 @@ spec:
         - name: api
           image: minicambio-orders-api:latest
           imagePullPolicy: Never # usa só a imagem do Docker local; nunca tenta baixar de um registry
-          env:
-            - name: ASPNETCORE_ENVIRONMENT
-              value: Development # igual ao compose: habilita a documentação em /scalar
-            - name: Database__ApplyMigrationsOnStartup # quem migra é o Job orders-migrations; o "false" explícito
-              value: "false" # vence o "true" do appsettings.Development.json, que o Development acima carrega
+          envFrom: # cada chave do ConfigMap vira uma variável de ambiente com o mesmo nome
+            - configMapRef:
+                name: orders-api
+          env: # se uma variável aparecer aqui e no ConfigMap, vale a daqui
             - name: DB_PASSWORD # tem que vir antes da connection string, que a usa via $(DB_PASSWORD)
               valueFrom:
                 secretKeyRef:
@@ -40,10 +41,6 @@ spec:
                   key: password
             - name: ConnectionStrings__Default # Host = nome do Service do banco
               value: Host=orders-db;Port=5432;Database=orders;Username=orders;Password=$(DB_PASSWORD)
-            - name: Services__RatesApi
-              value: http://rates-api:8080 # nome do Service do Rates
-            - name: Services__PaymentsApi
-              value: http://payments-api:8080 # nome do Service do Payments
           ports:
             - containerPort: 8080
           readinessProbe: # mesmas probes do rates-api.yaml; o /health/ready do Orders só checa o próprio banco
@@ -102,3 +99,15 @@ spec:
               app.kubernetes.io/component: controller
       ports:
         - port: 8080
+---
+apiVersion: v1
+kind: ConfigMap # o "environment:" do compose, fora do Deployment; o Pod só lê os valores ao subir
+metadata:
+  name: orders-api
+  namespace: minicambio
+data: # só texto: todo valor é string, por isso o "false" vai entre aspas
+  ASPNETCORE_ENVIRONMENT: Development # igual ao compose: habilita a documentação em /scalar
+  # quem migra é o Job orders-migrations; o "false" explícito vence o "true" do appsettings.Development.json
+  Database__ApplyMigrationsOnStartup: "false"
+  Services__RatesApi: http://rates-api:8080 # nome do Service do Rates
+  Services__PaymentsApi: http://payments-api:8080 # nome do Service do Payments

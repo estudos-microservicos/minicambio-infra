@@ -5,6 +5,7 @@
 #   http://localhost, e o Ingress Controller encaminha para este Service na porta 3000.
 # - Probes (Passo 13.2): readiness e liveness no /healthz do nginx, que responde 200 sem depender do Orders.
 # - Réplicas (Passo 14): 3 Pods de nginx, que não guardam estado; o Service divide o tráfego entre eles.
+# - ConfigMap (Passo 20): o ORDERS_API_URL saiu do "env" para o ConfigMap "web" (fim do arquivo), lido via envFrom.
 # Ainda provisório: a imagem só existe no Docker local (imagePullPolicy: Never).
 apiVersion: apps/v1
 kind: Deployment
@@ -25,9 +26,9 @@ spec:
         - name: nginx
           image: minicambio-web:latest
           imagePullPolicy: Never # usa só a imagem do Docker local; nunca tenta baixar de um registry
-          env:
-            - name: ORDERS_API_URL
-              value: http://orders-api:8080 # nome do Service do Orders
+          envFrom: # cada chave do ConfigMap vira uma variável de ambiente com o mesmo nome
+            - configMapRef:
+                name: web
           ports:
             - containerPort: 8080
           readinessProbe:
@@ -62,3 +63,11 @@ spec:
   ports:
     - port: 3000 # porta do Service dentro do cluster; é a que o Ingress cita em backend.service.port
       targetPort: 8080 # porta do nginx no container
+---
+apiVersion: v1
+kind: ConfigMap # o "environment:" do compose, fora do Deployment; o Pod só lê os valores ao subir
+metadata:
+  name: web
+  namespace: minicambio
+data:
+  ORDERS_API_URL: http://orders-api:8080 # nome do Service do Orders

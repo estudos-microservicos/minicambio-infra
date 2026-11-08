@@ -8,6 +8,8 @@
 # - Probes (Passo 13.2): do tipo exec, com o pg_isready do healthcheck do compose.
 # - NetworkPolicy (Passo 15.2): a rede rates-net do compose; só o rates-api entra na porta 5432.
 #   No Passo 16.3, o Job rates-migrations também passou a entrar.
+# - ConfigMap (Passo 20): POSTGRES_DB, POSTGRES_USER e PGDATA saíram do "env" para o ConfigMap "rates-db" (fim do
+#   arquivo), lido via envFrom. A senha continua no Secret de mesmo nome (tipos diferentes podem repetir o nome).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -28,18 +30,15 @@ spec:
       containers:
         - name: postgres
           image: postgres:17-alpine
-          env:
-            - name: POSTGRES_DB
-              value: rates
-            - name: POSTGRES_USER
-              value: rates
+          envFrom: # cada chave do ConfigMap vira uma variável de ambiente com o mesmo nome
+            - configMapRef:
+                name: rates-db
+          env: # se uma variável aparecer aqui e no ConfigMap, vale a daqui
             - name: POSTGRES_PASSWORD
               valueFrom: # no lugar de "value": o valor vem de outro objeto do cluster
                 secretKeyRef:
                   name: rates-db # o nome do Secret
                   key: password # a chave dentro dele
-            - name: PGDATA # os dados numa subpasta do disco: o Postgres exige uma pasta vazia para inicializar
-              value: /var/lib/postgresql/data/pgdata
           ports:
             - containerPort: 5432
           readinessProbe: # o Service só manda conexões quando o Postgres aceita conexões
@@ -115,3 +114,13 @@ spec:
     requests:
       storage: 1Gi
   # sem storageClassName: usa o StorageClass padrão do cluster (no Docker Desktop, o "hostpath")
+---
+apiVersion: v1
+kind: ConfigMap # o "environment:" do compose, fora do Deployment; o Pod só lê os valores ao subir
+metadata:
+  name: rates-db # mesmo nome do Secret: são tipos diferentes, então não há conflito
+  namespace: minicambio
+data:
+  POSTGRES_DB: rates
+  POSTGRES_USER: rates
+  PGDATA: /var/lib/postgresql/data/pgdata # subpasta do disco: o Postgres exige uma pasta vazia para inicializar

@@ -5,6 +5,7 @@
 # Passo 13.2: probes do tipo exec com pg_isready, como no rates-db.yaml.
 # Passo 15.2: NetworkPolicy "payments-db" (a rede payments-net do compose): só o payments-api entra na porta 5432.
 #   No Passo 16.5, o Job payments-migrations também passou a entrar.
+# Passo 20: POSTGRES_DB, POSTGRES_USER e PGDATA no ConfigMap "payments-db" (fim do arquivo), lido via envFrom.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -25,18 +26,15 @@ spec:
       containers:
         - name: postgres
           image: postgres:17-alpine
+          envFrom:
+            - configMapRef:
+                name: payments-db
           env:
-            - name: POSTGRES_DB
-              value: payments
-            - name: POSTGRES_USER
-              value: payments
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: payments-db
                   key: password
-            - name: PGDATA # os dados numa subpasta do disco: o Postgres exige uma pasta vazia para inicializar
-              value: /var/lib/postgresql/data/pgdata
           ports:
             - containerPort: 5432
           readinessProbe: # mesmas probes do rates-db.yaml
@@ -109,3 +107,13 @@ spec:
               app: payments-migrations
       ports:
         - port: 5432
+---
+apiVersion: v1
+kind: ConfigMap # o "environment:" do compose, fora do Deployment; o Pod só lê os valores ao subir
+metadata:
+  name: payments-db # mesmo nome do Secret: são tipos diferentes, então não há conflito
+  namespace: minicambio
+data:
+  POSTGRES_DB: payments
+  POSTGRES_USER: payments
+  PGDATA: /var/lib/postgresql/data/pgdata # subpasta do disco: o Postgres exige uma pasta vazia para inicializar
