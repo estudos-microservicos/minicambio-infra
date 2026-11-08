@@ -68,6 +68,62 @@ services:
     healthcheck: *db-healthcheck
     networks: [orders-net]
 
+  # ---------------------------------------------------------------- mensageria
+  # Kafka em modo KRaft (sem ZooKeeper): um único processo é broker (guarda as mensagens) e controller (guarda os
+  # metadados do cluster). Um nó só, então todo fator de replicação é 1.
+  kafka:
+    image: apache/kafka:4.3.2
+    environment:
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk # id fixo do cluster (gerado com kafka-storage.sh random-uuid)
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      # Três portas: INTERNAL para os containers (kafka:9092), EXTERNAL para o host (localhost:9094, usada pelo
+      # dotnet run) e CONTROLLER, só do próprio Kafka.
+      KAFKA_LISTENERS: INTERNAL://:9092,CONTROLLER://:9093,EXTERNAL://:9094
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,EXTERNAL://localhost:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_SHARE_COORDINATOR_STATE_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_SHARE_COORDINATOR_STATE_TOPIC_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false" # os tópicos são criados pelo kafka-topics, abaixo
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_HEAP_OPTS: -Xms256m -Xmx384m
+    ports:
+      - "9094:9094" # apenas para rodar uma API com dotnet run fora do compose
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 15s
+    networks: [backend]
+
+  # Roda uma vez e termina: cria os dois tópicos (3 partições cada). --if-not-exists torna a execução repetível.
+  kafka-topics:
+    image: apache/kafka:4.3.2
+    command:
+      - bash
+      - -c
+      - |
+        set -e
+        for topic in minicambio.payment-requests minicambio.payment-results; do
+          /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists \
+            --topic "$$topic" --partitions 3 --replication-factor 1
+        done
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --describe
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks: [backend]
+
   # ---------------------------------------------------------------- APIs
   rates-api:
     build: ../minicambio-rates
@@ -87,11 +143,14 @@ services:
     environment:
       <<: *api-environment
       ConnectionStrings__Default: Host=payments-db;Port=5432;Database=payments;Username=${PAYMENTS_DB_USER};Password=${PAYMENTS_DB_PASSWORD}
+      Kafka__BootstrapServers: kafka:9092
     ports:
       - "5002:8080"
     depends_on:
       payments-db:
         condition: service_healthy
+      kafka-topics:
+        condition: service_completed_successfully
     healthcheck: *api-healthcheck
     networks: [payments-net, backend]
 
@@ -101,7 +160,7 @@ services:
       <<: *api-environment
       ConnectionStrings__Default: Host=orders-db;Port=5432;Database=orders;Username=${ORDERS_DB_USER};Password=${ORDERS_DB_PASSWORD}
       Services__RatesApi: http://rates-api:8080
-      Services__PaymentsApi: http://payments-api:8080
+      Kafka__BootstrapServers: kafka:9092 # com o Payments a conversa é pelo Kafka, não mais por HTTP
     ports:
       - "5000:8080"
     depends_on:
@@ -109,8 +168,8 @@ services:
         condition: service_healthy
       rates-api:
         condition: service_started
-      payments-api:
-        condition: service_started
+      kafka-topics:
+        condition: service_completed_successfully
     healthcheck: *api-healthcheck
     networks: [orders-net, backend, frontend]
 
@@ -131,8 +190,8 @@ services:
       start_period: 5s
     networks: [frontend]
 
-# Cada banco só é visível para a sua API; as APIs se falam pela "backend";
-# o web só enxerga o orders-api pela "frontend".
+# Cada banco só é visível para a sua API; as APIs e o Kafka ficam na "backend" (Orders → Rates por HTTP,
+# Orders ↔ Payments pelo Kafka); o web só enxerga o orders-api pela "frontend".
 networks:
   rates-net:
   payments-net:
@@ -144,3 +203,4 @@ volumes:
   rates-db-data:
   payments-db-data:
   orders-db-data:
+  kafka-data:

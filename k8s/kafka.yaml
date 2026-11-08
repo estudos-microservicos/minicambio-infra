@@ -1,0 +1,135 @@
+# Passo 21: o Kafka (equivalente ao serviço kafka do docker-compose.yml), por onde o Orders e o Payments passaram a
+# conversar: o Orders publica os pedidos de pagamento e o Payments publica os resultados.
+# Mesmo padrão dos bancos (orders-db.yaml): Deployment com 1 Pod + Service + PVC + NetworkPolicy + ConfigMap.
+# - Modo KRaft, sem ZooKeeper: o mesmo processo é broker (guarda as mensagens) e controller (guarda os metadados).
+# - Um nó só: todo fator de replicação é 1. Em produção seriam 3 ou mais brokers, num StatefulSet (cada Pod com nome
+#   e disco próprios e estáveis) ou gerenciados por um operador como o Strimzi. Por ora segue o padrão dos bancos.
+# - No compose há também a porta 9094 para o host (dotnet run). Aqui só a 9092, de dentro do cluster.
+# - Ordem de deploy: este arquivo → Job kafka-topics (kafka-topics.yaml) → APIs.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka
+  namespace: minicambio
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate # como nos bancos: dois brokers com o mesmo node id no mesmo disco não podem rodar juntos
+  selector:
+    matchLabels:
+      app: kafka
+  template:
+    metadata:
+      labels:
+        app: kafka
+    spec:
+      # Por padrão o Kubernetes injeta em cada Pod variáveis com o endereço de cada Service do namespace. Com o Service
+      # "kafka", viriam KAFKA_PORT, KAFKA_SERVICE_HOST etc., e a imagem do Kafka transforma toda variável KAFKA_* em
+      # configuração do broker (KAFKA_PORT viraria "port=tcp://10.x.x.x:9092"). Desligado, o Pod só recebe o ConfigMap.
+      enableServiceLinks: false
+      containers:
+        - name: kafka
+          image: apache/kafka:4.3.2
+          envFrom:
+            - configMapRef:
+                name: kafka
+          ports:
+            - containerPort: 9092
+          readinessProbe: # tcpSocket: só testa se a porta aceita conexão (o broker só abre a 9092 quando está pronto)
+            tcpSocket:
+              port: 9092
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket:
+              port: 9092
+            initialDelaySeconds: 30 # a JVM leva alguns segundos para subir; antes disso a porta ainda está fechada
+            periodSeconds: 10
+            failureThreshold: 6
+          volumeMounts:
+            - name: dados
+              mountPath: /var/lib/kafka/data
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 768Mi # heap de 384 MiB (KAFKA_HEAP_OPTS) + o que a JVM usa fora dela
+      volumes:
+        - name: dados
+          persistentVolumeClaim:
+            claimName: kafka-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka # as APIs usam Kafka__BootstrapServers=kafka:9092
+  namespace: minicambio
+spec:
+  selector:
+    app: kafka
+  ports:
+    - port: 9092
+      targetPort: 9092
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: kafka-data # as mensagens e os offsets dos grupos de consumo sobrevivem à troca do Pod
+  namespace: minicambio
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: kafka
+  namespace: minicambio
+spec:
+  podSelector:
+    matchLabels:
+      app: kafka
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector: # publica pedidos e consome resultados
+            matchLabels:
+              app: orders-api
+        - podSelector: # consome pedidos e publica resultados
+            matchLabels:
+              app: payments-api
+        - podSelector: # o Job que cria os tópicos
+            matchLabels:
+              app: kafka-topics
+      ports:
+        - port: 9092
+---
+apiVersion: v1
+kind: ConfigMap # o "environment:" do compose; a imagem converte cada KAFKA_X_Y em x.y do server.properties
+metadata:
+  name: kafka
+  namespace: minicambio
+data:
+  CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk # id fixo do cluster, o mesmo do compose (kafka-storage.sh random-uuid)
+  KAFKA_NODE_ID: "1"
+  KAFKA_PROCESS_ROLES: broker,controller
+  KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+  KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+  KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092 # o endereço que o broker devolve aos clientes: o nome do Service
+  KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+  KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+  KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+  KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+  KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+  KAFKA_SHARE_COORDINATOR_STATE_TOPIC_REPLICATION_FACTOR: "1"
+  KAFKA_SHARE_COORDINATOR_STATE_TOPIC_MIN_ISR: "1"
+  KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+  KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false" # os tópicos são criados pelo Job kafka-topics
+  KAFKA_LOG_DIRS: /var/lib/kafka/data
+  KAFKA_HEAP_OPTS: -Xms256m -Xmx384m

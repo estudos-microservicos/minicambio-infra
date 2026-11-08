@@ -11,6 +11,10 @@
 # Passo 16.5: migrations fora da API (Database__ApplyMigrationsOnStartup=false), no Job orders-migrations.
 # Passo 20: a configuração não sigilosa saiu do "env" para o ConfigMap "orders-api" (fim do arquivo), lido via
 # envFrom. No "env" ficam só a senha (Secret) e a connection string, que depende dela via $(DB_PASSWORD).
+# Passo 21: o Orders não chama mais o Payments por HTTP. Ao confirmar a ordem, publica o pedido de pagamento no Kafka
+# e consome os resultados do tópico minicambio.payment-results (sem polling). No ConfigMap, Services__PaymentsApi
+# saiu e entrou Kafka__BootstrapServers. As 3 réplicas consomem no mesmo grupo (orders-api): o Kafka dá uma das 3
+# partições a cada Pod.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -110,4 +114,4 @@ data: # só texto: todo valor é string, por isso o "false" vai entre aspas
   # quem migra é o Job orders-migrations; o "false" explícito vence o "true" do appsettings.Development.json
   Database__ApplyMigrationsOnStartup: "false"
   Services__RatesApi: http://rates-api:8080 # nome do Service do Rates
-  Services__PaymentsApi: http://payments-api:8080 # nome do Service do Payments
+  Kafka__BootstrapServers: kafka:9092 # Passo 21: nome do Service do Kafka (o Payments agora é falado por ele)

@@ -1,0 +1,43 @@
+# Passo 21: cria os tópicos do Kafka num Job (equivalente ao serviço kafka-topics do docker-compose.yml).
+# - Mesma ideia dos Jobs de migração: uma tarefa que roda até o fim, uma vez, antes das APIs subirem.
+# - Usa a própria imagem do Kafka, que traz o kafka-topics.sh. Dois tópicos, com 3 partições cada:
+#     minicambio.payment-requests  Orders → Payments (pedidos de pagamento)
+#     minicambio.payment-results   Payments → Orders (resultados)
+#   3 partições = até 3 Pods de cada API consumindo em paralelo (um quarto Pod ficaria sem partição, ocioso).
+# - --if-not-exists torna o Job repetível. Se o Kafka ainda estiver subindo, o comando falha e o Job tenta de novo
+#   num Pod novo (backoffLimit).
+# - Para rodar de novo: kubectl delete job kafka-topics -n minicambio e apply (o template do Job é imutável).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kafka-topics
+  namespace: minicambio
+spec:
+  backoffLimit: 6
+  template:
+    metadata:
+      labels:
+        app: kafka-topics # liberada na NetworkPolicy do kafka
+    spec:
+      restartPolicy: Never
+      enableServiceLinks: false # mesmo motivo do kafka.yaml: nada de KAFKA_* injetado pelo Service "kafka"
+      containers:
+        - name: topics
+          image: apache/kafka:4.3.2
+          command:
+            - bash
+            - -c
+            - |
+              set -e
+              for topic in minicambio.payment-requests minicambio.payment-results; do
+                /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists \
+                  --topic "$topic" --partitions 3 --replication-factor 1
+              done
+              /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --describe
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi

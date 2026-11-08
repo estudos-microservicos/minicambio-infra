@@ -11,6 +11,10 @@
 # Passo 16.5: migrations fora da API (Database__ApplyMigrationsOnStartup=false), no Job payments-migrations.
 # Passo 20: a configuração não sigilosa saiu do "env" para o ConfigMap "payments-api" (fim do arquivo), lido via
 # envFrom. No "env" ficam só a senha (Secret) e a connection string, que depende dela via $(DB_PASSWORD).
+# Passo 21: os pedidos de pagamento chegam pelo Kafka (tópico minicambio.payment-requests) e os resultados saem por
+# ele (minicambio.payment-results). As 3 réplicas consomem no mesmo grupo (payments-api), uma partição para cada.
+# Como o Orders não chama mais o Payments por HTTP, a NetworkPolicy deixou de liberar o orders-api: a porta 8080 só
+# recebe o controlador do Ingress (payments.localhost, para estudo).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -88,9 +92,7 @@ spec:
     - Ingress # só o que ENTRA; a saída continua livre (a API ainda alcança o próprio banco e o DNS)
   ingress:
     - from:
-        - podSelector: # só o Orders chama o Payments (pagamento ao confirmar)
-            matchLabels:
-              app: orders-api
+        # Passo 21: o item do orders-api saiu; o Orders fala com o Payments pelo Kafka, não mais pela porta 8080
         - namespaceSelector: # Passo 18.3: o controlador do Ingress, que mora em OUTRO namespace
             matchLabels:
               kubernetes.io/metadata.name: ingress-nginx # label que todo namespace recebe sozinho
@@ -109,3 +111,4 @@ data: # só texto: todo valor é string, por isso o "false" vai entre aspas
   ASPNETCORE_ENVIRONMENT: Development # igual ao compose: habilita a documentação em /scalar
   # quem migra é o Job payments-migrations; o "false" explícito vence o "true" do appsettings.Development.json
   Database__ApplyMigrationsOnStartup: "false"
+  Kafka__BootstrapServers: kafka:9092 # Passo 21: nome do Service do Kafka
