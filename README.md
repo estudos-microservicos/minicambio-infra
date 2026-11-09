@@ -1,11 +1,11 @@
 # minicambio-infra
 
 Orquestração local do MiniCâmbio com Docker Compose: três microserviços .NET (Rates, Payments e Orders),
-cada um com o seu PostgreSQL, um Kafka para a conversa entre o Orders e o Payments e o frontend React servido
-por nginx. Também traz o smoke test, uma coleção de requisições e os manifests do Kubernetes (`k8s/`).
+cada um com o seu PostgreSQL, um Redis que guarda por 5 min as taxas do Rates, um Kafka para a conversa entre o
+Orders e o Payments e o frontend React servido por nginx. Também traz o smoke test, uma coleção de requisições e os manifests do Kubernetes (`k8s/`).
 
 ```
-Navegador ──► web (nginx :3000) ──/api/*──► orders-api ──HTTP──► rates-api (cotações)
+Navegador ──► web (nginx :3000) ──/api/*──► orders-api ──HTTP──► rates-api (cotações) ──► rates-cache (Redis)
                                                   │
                                                   └──Kafka──► payments-api (pagamentos mockados)
                          minicambio.payment-requests ──►   (pedido, ao confirmar a ordem)
@@ -39,7 +39,7 @@ minicambio/
 cd minicambio-infra
 Copy-Item .env.example .env      # só na primeira vez; ajuste as credenciais se quiser
 docker compose up --build -d
-docker compose ps                # os 8 serviços de longa duração ficam "healthy"; o kafka-topics roda e sai (Exited 0)
+docker compose ps                # os 9 serviços de longa duração ficam "healthy"; o kafka-topics roda e sai (Exited 0)
 ```
 
 As APIs aplicam as próprias migrations ao subir (`Database__ApplyMigrationsOnStartup=true`) e o Rates já cria as
@@ -74,6 +74,7 @@ Cenários do mock de pagamentos para testar falhas:
 | Banco do Rates | `rates-db` | `5433` | |
 | Banco do Payments | `payments-db` | `5434` | |
 | Banco do Orders | `orders-db` | `5435` | |
+| Redis do Rates | `rates-cache` | `6379` | senha `RATES_CACHE_PASSWORD` do `.env` (para inspeção e `dotnet run`) |
 | Kafka | `kafka` | `9094` | `localhost:9094` (só para `dotnet run` fora do compose; os containers usam `kafka:9092`) |
 
 As APIs rodam em `Development`, por isso a documentação OpenAPI fica disponível no Scalar (`/scalar`) e em
@@ -90,7 +91,8 @@ Com o ambiente no ar:
 ```
 
 O script aguarda os health checks, cria/confirma/cancela ordens (sucesso, `FAIL Teste`, cancelamento,
-idempotência, moeda inválida), valida o proxy `/api` e o fallback de SPA do nginx e termina com código de saída 1
+idempotência, moeda inválida), valida o proxy `/api`, o fallback de SPA do nginx e o cache de taxas do Rates
+(duas consultas seguidas devolvem a mesma taxa) e termina com código de saída 1
 se alguma verificação falhar. Se a política de execução bloquear o script:
 `powershell -ExecutionPolicy Bypass -File .\smoke-test.ps1`.
 
@@ -101,11 +103,11 @@ REST Client, no JetBrains HTTP Client ou no Visual Studio.
 
 ## Redes
 
-Cada banco só é visível para a própria API:
+Cada banco (e o Redis do Rates) só é visível para a própria API:
 
 | Rede | Membros |
 |---|---|
-| `rates-net` | `rates-db`, `rates-api` |
+| `rates-net` | `rates-db`, `rates-cache`, `rates-api` |
 | `payments-net` | `payments-db`, `payments-api` |
 | `orders-net` | `orders-db`, `orders-api` |
 | `backend` | `rates-api`, `payments-api`, `orders-api`, `kafka`, `kafka-topics` |
@@ -117,7 +119,8 @@ Assim, o `orders-api` não resolve `rates-db` nem `payments-db`, e o `web` só e
 
 ```powershell
 docker compose logs -f orders-api   # logs de um serviço (JSON, com CorrelationId no escopo)
+docker compose exec rates-cache redis-cli KEYS 'rates:*'   # taxas em cache (TTL rates:live-mid:USD mostra o tempo restante)
 docker compose exec kafka /opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-server localhost:9092 --describe --all-groups   # partições e atraso de cada grupo
 docker compose down                 # para e remove os containers (mantém os dados)
-docker compose down -v              # remove também os volumes dos bancos e do Kafka
+docker compose down -v              # remove também os volumes dos bancos e do Kafka (o Redis não tem volume)
 ```

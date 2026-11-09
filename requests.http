@@ -8,7 +8,7 @@
 
 ######################################################################## Rates
 
-### Lista as taxas de todas as moedas (variação de ±1% a cada chamada)
+### Lista as taxas de todas as moedas (variação de ±1%, mantida 5 min no cache do Redis: repita e veja o mesmo quotedAt)
 GET {{rates}}/api/v1/rates
 
 ### Taxa de uma moeda

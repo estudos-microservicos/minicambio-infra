@@ -1,0 +1,108 @@
+# Passo 22: o Redis do Rates (equivalente ao serviço rates-cache do docker-compose.yml), que guarda a taxa ao vivo de
+# cada moeda por 5 min. Como é um só para todas as réplicas do rates-api, os 3 Pods devolvem a mesma taxa.
+# Mesmo padrão dos bancos, com duas diferenças:
+# - Sem PVC: cache é descartável. Se o Pod for recriado, o Redis volta vazio e o Rates gera taxas novas.
+#   Por isso também não precisa de "strategy: Recreate" (não há disco para dois Pods disputarem).
+# - A configuração do Redis é um ARQUIVO (redis.conf) e não variáveis de ambiente: o ConfigMap guarda o conteúdo do
+#   arquivo e é montado como volume dentro do container. No compose, as mesmas opções vão como flags no "command".
+# - Senha: Secret "rates-cache" (k8s/secrets.yaml), lida pelo Redis e pelo rates-api.
+# - Fora da readiness do rates-api de propósito: sem Redis a API continua respondendo, só que sem cache.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rates-cache
+  namespace: minicambio
+spec:
+  replicas: 1 # Redis com réplicas (principal + réplicas, ou Redis Cluster) é outro assunto; aqui é um só
+  selector:
+    matchLabels:
+      app: rates-cache
+  template:
+    metadata:
+      labels:
+        app: rates-cache
+    spec:
+      containers:
+        - name: redis
+          image: redis:8.10-alpine
+          # "args" e não "command": mantém o entrypoint da imagem, que troca para o usuário redis antes de subir.
+          # $(REDISCLI_AUTH) é trocado pelo valor da variável declarada no "env" abaixo, como no $(DB_PASSWORD) das APIs.
+          args: ["redis-server", "/usr/local/etc/redis/redis.conf", "--requirepass", "$(REDISCLI_AUTH)"]
+          env:
+            - name: REDISCLI_AUTH # nome que o redis-cli procura sozinho: as probes e o "kubectl exec" não pedem senha
+              valueFrom:
+                secretKeyRef:
+                  name: rates-cache
+                  key: password
+          ports:
+            - containerPort: 6379
+          readinessProbe:
+            exec: # como o pg_isready dos bancos: um comando dentro do container; código de saída 0 = OK
+              command: ["sh", "-c", "redis-cli ping | grep -q PONG"]
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "redis-cli ping | grep -q PONG"]
+            periodSeconds: 10
+            failureThreshold: 3
+          volumeMounts:
+            - name: config
+              mountPath: /usr/local/etc/redis # cada chave do ConfigMap vira um arquivo nesta pasta (redis.conf)
+              readOnly: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi # o maxmemory do redis.conf (64mb) fica abaixo do limite, com folga para o processo
+      volumes:
+        - name: config
+          configMap:
+            name: rates-cache
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rates-cache # o rates-api usa ConnectionStrings__Redis=rates-cache:6379,...
+  namespace: minicambio
+spec:
+  selector:
+    app: rates-cache
+  ports:
+    - port: 6379
+      targetPort: 6379
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: rates-cache
+  namespace: minicambio
+spec:
+  podSelector:
+    matchLabels:
+      app: rates-cache
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector: # a rede rates-net do compose: só a API do Rates fala com o seu Redis
+            matchLabels:
+              app: rates-api
+      ports:
+        - port: 6379
+---
+apiVersion: v1
+kind: ConfigMap # aqui o ConfigMap não vira variáveis (envFrom): vira um arquivo, montado pelo volume "config"
+metadata:
+  name: rates-cache
+  namespace: minicambio
+data:
+  redis.conf: | # o "|" guarda o texto exatamente como está, com as quebras de linha
+    # Só memória: sem snapshot (save) e sem log de escrita (appendonly). Cache se reconstrói sozinho.
+    save ""
+    appendonly no
+    # No limite de memória, descarta as chaves menos usadas recentemente em vez de recusar gravações.
+    maxmemory 64mb
+    maxmemory-policy allkeys-lru

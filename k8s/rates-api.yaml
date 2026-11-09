@@ -11,6 +11,9 @@
 #   Passo 18.3: o controlador do Ingress (namespace ingress-nginx) também entra, para o rates.localhost.
 # - ConfigMap (Passo 20): a configuração não sigilosa saiu do "env" para o ConfigMap "rates-api" (fim do arquivo),
 #   lido via envFrom. No "env" ficam só a senha (Secret) e a connection string, que depende dela.
+# - Cache (Passo 22): a taxa ao vivo fica 5 min no Redis rates-cache (rates-cache.yaml), compartilhado pelos 3 Pods.
+#   Senha do Secret "rates-cache" em REDIS_PASSWORD, dentro da ConnectionStrings__Redis. O Redis não entra na
+#   readiness: fora do ar, a API segue respondendo sem cache.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -41,6 +44,13 @@ spec:
                   key: password
             - name: ConnectionStrings__Default # Host = nome do Service do banco; $(DB_PASSWORD) é trocado pelo valor acima
               value: Host=rates-db;Port=5432;Database=rates;Username=rates;Password=$(DB_PASSWORD)
+            - name: REDIS_PASSWORD # Passo 22: mesmo esquema do banco, com o Secret do Redis
+              valueFrom:
+                secretKeyRef:
+                  name: rates-cache
+                  key: password
+            - name: ConnectionStrings__Redis # Host = nome do Service do Redis
+              value: rates-cache:6379,password=$(REDIS_PASSWORD)
           ports:
             - containerPort: 8080
           readinessProbe: # "posso receber requisições?"; se falhar, o Service tira o Pod da lista, sem reiniciar
@@ -109,3 +119,4 @@ data: # só texto: todo valor é string, por isso o "false" vai entre aspas
   ASPNETCORE_ENVIRONMENT: Development # igual ao compose: habilita a documentação em /scalar
   # quem migra é o Job rates-migrations; o "false" explícito vence o "true" do appsettings.Development.json
   Database__ApplyMigrationsOnStartup: "false"
+  Rates__LiveRateCacheSeconds: "300" # Passo 22: 5 min de cache da taxa ao vivo (o padrão da API, aqui explícito)

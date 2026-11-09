@@ -221,6 +221,17 @@ Invoke-Step '9. Fallback de SPA: GET /orders/qualquer-coisa pelo web -> 200 com 
     Assert-That ($response.Text -match '<div id="root">') 'HTML não parece ser o index.html do app'
 }
 
+Invoke-Step '10. Cache do Rates: duas consultas seguidas de USD -> mesma taxa (Redis)' {
+    # Sem o cache, cada consulta sortearia uma variação nova. Com ele, a taxa só muda quando a chave expira (5 min).
+    # Contra o Kubernetes, as duas consultas podem cair em Pods diferentes: o Redis é o mesmo para todos.
+    $first = Invoke-Api -Method GET -Url "$RatesUrl/api/v1/rates/USD"
+    $second = Invoke-Api -Method GET -Url "$RatesUrl/api/v1/rates/USD"
+    Assert-Status $first 200
+    Assert-Status $second 200
+    Assert-That ($first.Body.midRate -eq $second.Body.midRate) "midRate mudou: $($first.Body.midRate) -> $($second.Body.midRate)"
+    Assert-That ($first.Body.quotedAt -eq $second.Body.quotedAt) "quotedAt mudou: $($first.Body.quotedAt) -> $($second.Body.quotedAt)"
+}
+
 # ------------------------------------------------------------------------------------------------ resultado
 
 Write-Host ''

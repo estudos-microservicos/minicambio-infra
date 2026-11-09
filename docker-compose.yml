@@ -68,6 +68,35 @@ services:
     healthcheck: *db-healthcheck
     networks: [orders-net]
 
+  # ---------------------------------------------------------------- cache
+  # Redis do Rates: guarda a taxa ao vivo de cada moeda por 5 min (Rates__LiveRateCacheSeconds), compartilhada por
+  # todas as réplicas. Só memória: sem volume e com a persistência desligada (--save "" e --appendonly no), porque
+  # cache se reconstrói sozinho. --maxmemory + allkeys-lru: no limite, o Redis descarta as chaves menos usadas.
+  rates-cache:
+    image: redis:8.10-alpine
+    command:
+      - redis-server
+      - --requirepass
+      - ${RATES_CACHE_PASSWORD:?defina RATES_CACHE_PASSWORD no .env}
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+      - --maxmemory
+      - 64mb
+      - --maxmemory-policy
+      - allkeys-lru
+    environment:
+      REDISCLI_AUTH: ${RATES_CACHE_PASSWORD} # o redis-cli lê a senha daqui (healthcheck e docker compose exec)
+    ports:
+      - "6379:6379" # apenas para inspeção local e dotnet run
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [rates-net]
+
   # ---------------------------------------------------------------- mensageria
   # Kafka em modo KRaft (sem ZooKeeper): um único processo é broker (guarda as mensagens) e controller (guarda os
   # metadados do cluster). Um nó só, então todo fator de replicação é 1.
@@ -130,11 +159,14 @@ services:
     environment:
       <<: *api-environment
       ConnectionStrings__Default: Host=rates-db;Port=5432;Database=rates;Username=${RATES_DB_USER};Password=${RATES_DB_PASSWORD}
+      ConnectionStrings__Redis: rates-cache:6379,password=${RATES_CACHE_PASSWORD}
     ports:
       - "5001:8080"
     depends_on:
       rates-db:
         condition: service_healthy
+      rates-cache:
+        condition: service_started # não espera o healthy: sem o Redis a API funciona, só que sem cache
     healthcheck: *api-healthcheck
     networks: [rates-net, backend]
 
@@ -190,7 +222,7 @@ services:
       start_period: 5s
     networks: [frontend]
 
-# Cada banco só é visível para a sua API; as APIs e o Kafka ficam na "backend" (Orders → Rates por HTTP,
+# Cada banco (e o Redis do Rates) só é visível para a sua API; as APIs e o Kafka ficam na "backend" (Orders → Rates por HTTP,
 # Orders ↔ Payments pelo Kafka); o web só enxerga o orders-api pela "frontend".
 networks:
   rates-net:
