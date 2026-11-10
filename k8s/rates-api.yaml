@@ -14,13 +14,16 @@
 # - Cache (Passo 22): a taxa ao vivo fica 5 min no Redis rates-cache (rates-cache.yaml), compartilhado pelos 3 Pods.
 #   Senha do Secret "rates-cache" em REDIS_PASSWORD, dentro da ConnectionStrings__Redis. O Redis não entra na
 #   readiness: fora do ar, a API segue respondendo sem cache.
+# - Autoscaling (Passo 23.4): o número de Pods saiu do Deployment (sem "replicas") e passou para o
+#   HorizontalPodAutoscaler "rates-api" (fim do arquivo): de 1 a 3 Pods, conforme a CPU. Exige o metrics-server.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: rates-api
   namespace: minicambio
 spec:
-  replicas: 3 # o Deployment mantém 3 Pods iguais; o Service divide as requisições entre eles
+  # sem "replicas": quem decide quantos Pods rodam é o HPA (fim do arquivo); com o campo aqui, cada
+  # "kubectl apply" voltaria a quantidade para o valor fixo e brigaria com o HPA
   selector:
     matchLabels:
       app: rates-api
@@ -120,3 +123,23 @@ data: # só texto: todo valor é string, por isso o "false" vai entre aspas
   # quem migra é o Job rates-migrations; o "false" explícito vence o "true" do appsettings.Development.json
   Database__ApplyMigrationsOnStartup: "false"
   Rates__LiveRateCacheSeconds: "300" # Passo 22: 5 min de cache da taxa ao vivo (o padrão da API, aqui explícito)
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler # sem equivalente no compose: lá o "deploy.replicas" é sempre fixo
+metadata:
+  name: rates-api
+  namespace: minicambio
+spec:
+  scaleTargetRef: # o que ele escala: o HPA só muda o "replicas" deste Deployment, como um "kubectl scale"
+    apiVersion: apps/v1
+    kind: Deployment
+    name: rates-api
+  minReplicas: 1 # parado, fica com 1 Pod
+  maxReplicas: 3 # nunca passa de 3, por mais carga que chegue
+  metrics:
+    - type: Resource # CPU medida pelo metrics-server
+      resource:
+        name: cpu
+        target:
+          type: Utilization # porcentagem do requests.cpu do container (100m), não da máquina
+          averageUtilization: 50 # alvo: média de 50m por Pod; acima disso ele cria Pods, abaixo ele remove
