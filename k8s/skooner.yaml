@@ -1,0 +1,47 @@
+# Extra (fora da sequência de passos): Skooner, painel web para ver Pods, Deployments, logs e métricas do cluster.
+# - O Skooner em si (Deployment + Service "skooner" no kube-system, imagem ghcr.io/skooner-k8s/skooner:stable,
+#   porta 4654) vem do manifest oficial, fora do repo, como o ingress-nginx e o metrics-server:
+#   kubectl apply -f https://raw.githubusercontent.com/skooner-k8s/skooner/master/kubernetes-skooner.yaml
+# - Este arquivo traz só o que é nosso: a conta usada no login e a regra de Ingress (http://skooner.localhost).
+# - Equivalente no compose: não há. Seria um container extra com acesso ao socket do Docker (como o Portainer).
+# - Login: o Skooner não tem usuário próprio. Ele pede um token e faz cada chamada à API do Kubernetes com ele,
+#   então o painel enxerga exatamente o que a conta do token pode ver. Para gerar um token (vale 24 h):
+#   kubectl create token skooner-sa -n kube-system --duration=24h
+# Só para cluster local: a conta é cluster-admin (o painel lista nós, namespaces e pode apagar/escalar recursos).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: skooner-sa
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding # vale para o cluster todo, não só para um namespace
+metadata:
+  name: skooner-sa
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin # papel que já vem no cluster; "view" seria só leitura, mas sem nós nem Secrets
+subjects:
+  - kind: ServiceAccount
+    name: skooner-sa
+    namespace: kube-system
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: skooner
+  namespace: kube-system # o Ingress só enxerga Services do próprio namespace, e o Service skooner está aqui
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: skooner.localhost # o navegador resolve *.localhost sozinho (o PowerShell 5.1 não; ver Passo 18)
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: skooner
+                port:
+                  number: 80 # a "port" do Service (o targetPort é o 4654 do container)
