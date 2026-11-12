@@ -7,6 +7,7 @@
 #   arquivo e é montado como volume dentro do container. No compose, as mesmas opções vão como flags no "command".
 # - Senha: Secret "rates-cache" (k8s/secrets.yaml), lida pelo Redis e pelo rates-api.
 # - Fora da readiness do rates-api de propósito: sem Redis a API continua respondendo, só que sem cache.
+# Passo 26.8: o ConfigMap saiu deste arquivo; o Kustomize o gera, com hash no nome, a partir do rates/redis.conf (files:, em vez de envs:; o nome no volume "config" também é trocado).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -92,17 +93,3 @@ spec:
               app: rates-api
       ports:
         - port: 6379
----
-apiVersion: v1
-kind: ConfigMap # aqui o ConfigMap não vira variáveis (envFrom): vira um arquivo, montado pelo volume "config"
-metadata:
-  name: rates-cache
-  namespace: minicambio
-data:
-  redis.conf: | # o "|" guarda o texto exatamente como está, com as quebras de linha
-    # Só memória: sem snapshot (save) e sem log de escrita (appendonly). Cache se reconstrói sozinho.
-    save ""
-    appendonly no
-    # No limite de memória, descarta as chaves menos usadas recentemente em vez de recusar gravações.
-    maxmemory 64mb
-    maxmemory-policy allkeys-lru

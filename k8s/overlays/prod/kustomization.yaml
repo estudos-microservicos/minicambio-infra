@@ -1,0 +1,31 @@
+# Passo 26.2: ambiente PROD (de estudo). É o ambiente que já rodava no namespace "minicambio".
+# Por enquanto não muda nada em relação à base: o resultado tem de sair "unchanged" no cluster atual.
+# Aplicar: kubectl apply -k k8s/overlays/prod
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Troca o namespace de TODOS os recursos (inclusive o nome do próprio Namespace da base).
+# Aqui o valor é igual ao da base; no DEV (26.3) é este campo que separa os ambientes.
+namespace: minicambio
+
+resources:
+  - ../../base # uma pasta com kustomization.yaml também pode ser um "resource"
+
+# Passo 26.7: configuração própria do PROD por cima da gerada na base.
+# "behavior: merge" junta estes valores aos do orders-api.env da base (o que repete, troca; o que é novo, entra).
+# Production desliga a documentação em /scalar (Program.cs só a publica em Development); o DEV segue com ela.
+# O conteúdo muda, então o hash do PROD fica diferente do hash do DEV.
+# Passo 26.8: o mesmo nas outras duas APIs.
+configMapGenerator:
+  - name: orders-api
+    behavior: merge
+    literals:
+      - ASPNETCORE_ENVIRONMENT=Production
+  - name: rates-api
+    behavior: merge
+    literals:
+      - ASPNETCORE_ENVIRONMENT=Production
+  - name: payments-api
+    behavior: merge
+    literals:
+      - ASPNETCORE_ENVIRONMENT=Production

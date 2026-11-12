@@ -12,8 +12,11 @@
     ./smoke-test.ps1
 .EXAMPLE
     ./smoke-test.ps1 -OrdersUrl http://orders.localhost -RatesUrl http://rates.localhost -PaymentsUrl http://payments.localhost -WebUrl http://localhost
-    Contra o Kubernetes, tudo pelo Ingress (k8s/ingress.yaml). No Windows PowerShell 5.1 os nomes
-    *.localhost precisam estar no arquivo hosts (127.0.0.1).
+    Contra o Kubernetes (ambiente PROD), tudo pelo Ingress (k8s/base/entrada/ingress.yaml). No Windows
+    PowerShell 5.1 os nomes *.localhost precisam estar no arquivo hosts (127.0.0.1).
+.EXAMPLE
+    ./smoke-test.ps1 -OrdersUrl http://orders.dev.localhost -RatesUrl http://rates.dev.localhost -PaymentsUrl http://payments.dev.localhost -WebUrl http://dev.localhost
+    Contra o ambiente DEV do Kubernetes (k8s/overlays/dev), que usa os nomes *.dev.localhost.
 #>
 [CmdletBinding()]
 param(

@@ -1,0 +1,66 @@
+# Passo 26.3: ambiente DEV (de estudo), no namespace "minicambio-dev", com no máximo 1 Pod por componente.
+# - Mesma base do PROD; muda só o que está aqui. Os arquivos da base não são editados.
+# - 1 Pod: os bancos, o Kafka e o Redis já têm 1. As APIs e o web não têm "replicas" no Deployment (o HPA
+#   cuidava disso, Passo 23); sem o HPA, o Deployment fica no padrão, que é 1. Sem HPA, o PDB do Rates
+#   (minAvailable: 1) só travaria o drain, então também sai.
+# - Equivalente no compose: um "docker compose -p minicambio-dev -f docker-compose.yml -f docker-compose.dev.yml".
+# - Passo 26.4: endereços próprios no Ingress (o ingress-nginx recusa dois Ingress com o mesmo host, mesmo em
+#   namespaces diferentes): dev.localhost (site), orders/rates/payments.dev.localhost (APIs). O PowerShell 5.1
+#   precisa deles no arquivo hosts do Windows (o navegador e o curl.exe resolvem *.localhost sozinhos).
+# Aplicar: kubectl apply -k k8s/overlays/dev
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: minicambio-dev # troca o namespace de tudo, e o nome do Namespace da base
+
+resources:
+  - ../../base
+
+patches:
+  # "$patch: delete" é um patch que, em vez de mudar campos, remove o recurso inteiro do resultado.
+  # O "target" escolhe a quem ele se aplica: todos os HPAs, qualquer que seja o nome.
+  - target:
+      kind: HorizontalPodAutoscaler
+    patch: |-
+      $patch: delete
+      apiVersion: autoscaling/v2
+      kind: HorizontalPodAutoscaler
+      metadata:
+        name: qualquer # ignorado: quem decide o alvo é o "target" acima
+  - target:
+      kind: PodDisruptionBudget
+    patch: |-
+      $patch: delete
+      apiVersion: policy/v1
+      kind: PodDisruptionBudget
+      metadata:
+        name: qualquer
+  # Passo 26.4: JSON Patch (RFC 6902), uma lista de operações sobre caminhos do YAML. Serve aqui porque
+  # "rules" é uma lista sem chave de mescla: um patch comum (como os de cima) trocaria a lista inteira.
+  # O caminho usa a posição na lista (0 = primeira regra), então cada troca vem depois de um "test", que
+  # confere o valor atual: se alguém reordenar as regras da base, o Kustomize falha em vez de trocar o host errado.
+  - target:
+      kind: Ingress
+      name: minicambio
+    patch: |-
+      - op: add # a regra 0 (site) não tem host na base; "add" cria o campo
+        path: /spec/rules/0/host
+        value: dev.localhost
+      - op: test
+        path: /spec/rules/1/host
+        value: orders.localhost
+      - op: replace
+        path: /spec/rules/1/host
+        value: orders.dev.localhost
+      - op: test
+        path: /spec/rules/2/host
+        value: rates.localhost
+      - op: replace
+        path: /spec/rules/2/host
+        value: rates.dev.localhost
+      - op: test
+        path: /spec/rules/3/host
+        value: payments.localhost
+      - op: replace
+        path: /spec/rules/3/host
+        value: payments.dev.localhost

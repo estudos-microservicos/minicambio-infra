@@ -1,58 +1,59 @@
-# Passo 9: a API do Orders (equivalente ao serviço orders-api do docker-compose.yml).
-# Mesmo padrão do rates-api.yaml, com uma diferença: o Orders chama o Rates e o Payments pelos nomes dos Services
-# deles (rates-api e payments-api). O Service "orders-api" é o endereço que o web (nginx) vai usar.
-# Passo 11: a senha do banco vem do Secret "orders-db" e entra na connection string via $(DB_PASSWORD).
+# Passo 8: a API do Payments (equivalente ao serviço payments-api do docker-compose.yml).
+# Mesmo padrão do rates-api.yaml: Deployment com a imagem do Docker local + Service com o endereço fixo
+# "payments-api", que o Orders vai usar (Services__PaymentsApi=http://payments-api:8080).
+# Passo 11: a senha do banco vem do Secret "payments-db" e entra na connection string via $(DB_PASSWORD).
 # Ainda provisório: a imagem só existe no Docker local (imagePullPolicy: Never).
 # Passo 13: probes de readiness (/health/ready) e liveness (/health/live), como no rates-api.yaml.
 # Passo 14: 3 réplicas, como no rates-api.yaml. O worker roda em cada Pod e o SELECT ... FOR UPDATE SKIP LOCKED
 # impede que dois Pods processem o mesmo registro.
-# Passo 15.3: NetworkPolicy "orders-api" (a rede frontend do compose): só o web entra na porta 8080.
-# Passo 18.3: o controlador do Ingress (namespace ingress-nginx) também entra, para o orders.localhost.
-# Passo 16.5: migrations fora da API (Database__ApplyMigrationsOnStartup=false), no Job orders-migrations.
-# Passo 20: a configuração não sigilosa saiu do "env" para o ConfigMap "orders-api" (fim do arquivo), lido via
+# Passo 15.3: NetworkPolicy "payments-api" (a rede backend do compose): só o orders-api entra na porta 8080.
+# Passo 18.3: o controlador do Ingress (namespace ingress-nginx) também entra, para o payments.localhost.
+# Passo 16.5: migrations fora da API (Database__ApplyMigrationsOnStartup=false), no Job payments-migrations.
+# Passo 20: a configuração não sigilosa saiu do "env" para o ConfigMap "payments-api" (fim do arquivo), lido via
 # envFrom. No "env" ficam só a senha (Secret) e a connection string, que depende dela via $(DB_PASSWORD).
-# Passo 21: o Orders não chama mais o Payments por HTTP. Ao confirmar a ordem, publica o pedido de pagamento no Kafka
-# e consome os resultados do tópico minicambio.payment-results (sem polling). No ConfigMap, Services__PaymentsApi
-# saiu e entrou Kafka__BootstrapServers. As 3 réplicas consomem no mesmo grupo (orders-api): o Kafka dá uma das 3
-# partições a cada Pod.
-# Passo 23.7: autoscaling. O número de Pods saiu do Deployment (sem "replicas") e passou para o HPA "orders-api"
+# Passo 21: os pedidos de pagamento chegam pelo Kafka (tópico minicambio.payment-requests) e os resultados saem por
+# ele (minicambio.payment-results). As 3 réplicas consomem no mesmo grupo (payments-api), uma partição para cada.
+# Como o Orders não chama mais o Payments por HTTP, a NetworkPolicy deixou de liberar o orders-api: a porta 8080 só
+# recebe o controlador do Ingress (payments.localhost, para estudo).
+# Passo 23.7: autoscaling. O número de Pods saiu do Deployment (sem "replicas") e passou para o HPA "payments-api"
 # (fim do arquivo): de 1 a 3 Pods, conforme a CPU. O teto de 3 é o número de partições do tópico: um 4º Pod
 # entraria no grupo do Kafka sem partição para ler. Com 1 Pod, ele lê as 3 partições sozinho.
 # Passo 25.5: behavior no HPA (fim do arquivo), igual ao do Rates: sobe 1 Pod a cada 30 s e desce após 1 min.
+# Passo 26.8: o ConfigMap saiu deste arquivo; o Kustomize o gera, com hash no nome, a partir do payments/payments-api.env.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: orders-api
+  name: payments-api
   namespace: minicambio
 spec:
   # sem "replicas": quem decide é o HPA (fim do arquivo). O worker roda em cada Pod que existir e o SKIP LOCKED
   # continua dividindo os registros entre eles, sejam 1 ou 3
   selector:
     matchLabels:
-      app: orders-api
+      app: payments-api
   template:
     metadata:
       labels:
-        app: orders-api
+        app: payments-api
     spec:
       containers:
         - name: api
-          image: minicambio-orders-api:latest
+          image: minicambio-payments-api:latest
           imagePullPolicy: Never # usa só a imagem do Docker local; nunca tenta baixar de um registry
           envFrom: # cada chave do ConfigMap vira uma variável de ambiente com o mesmo nome
             - configMapRef:
-                name: orders-api
+                name: payments-api
           env: # se uma variável aparecer aqui e no ConfigMap, vale a daqui
             - name: DB_PASSWORD # tem que vir antes da connection string, que a usa via $(DB_PASSWORD)
               valueFrom:
                 secretKeyRef:
-                  name: orders-db
+                  name: payments-db
                   key: password
             - name: ConnectionStrings__Default # Host = nome do Service do banco
-              value: Host=orders-db;Port=5432;Database=orders;Username=orders;Password=$(DB_PASSWORD)
+              value: Host=payments-db;Port=5432;Database=payments;Username=payments;Password=$(DB_PASSWORD)
           ports:
             - containerPort: 8080
-          readinessProbe: # mesmas probes do rates-api.yaml; o /health/ready do Orders só checa o próprio banco
+          readinessProbe: # mesmas probes do rates-api.yaml
             httpGet:
               path: /health/ready
               port: 8080
@@ -75,11 +76,11 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: orders-api
+  name: payments-api
   namespace: minicambio
 spec:
   selector:
-    app: orders-api
+    app: payments-api
   ports:
     - port: 8080
       targetPort: 8080
@@ -87,19 +88,17 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: orders-api
+  name: payments-api
   namespace: minicambio
 spec:
   podSelector: # a quem a regra se aplica: aos Pods desta API
     matchLabels:
-      app: orders-api
+      app: payments-api
   policyTypes:
     - Ingress # só o que ENTRA; a saída continua livre (a API ainda alcança o próprio banco e o DNS)
   ingress:
     - from:
-        - podSelector: # só o nginx do web chama o Orders (o /api do navegador)
-            matchLabels:
-              app: web
+        # Passo 21: o item do orders-api saiu; o Orders fala com o Payments pelo Kafka, não mais pela porta 8080
         - namespaceSelector: # Passo 18.3: o controlador do Ingress, que mora em OUTRO namespace
             matchLabels:
               kubernetes.io/metadata.name: ingress-nginx # label que todo namespace recebe sozinho
@@ -109,30 +108,18 @@ spec:
       ports:
         - port: 8080
 ---
-apiVersion: v1
-kind: ConfigMap # o "environment:" do compose, fora do Deployment; o Pod só lê os valores ao subir
-metadata:
-  name: orders-api
-  namespace: minicambio
-data: # só texto: todo valor é string, por isso o "false" vai entre aspas
-  ASPNETCORE_ENVIRONMENT: Development # igual ao compose: habilita a documentação em /scalar
-  # quem migra é o Job orders-migrations; o "false" explícito vence o "true" do appsettings.Development.json
-  Database__ApplyMigrationsOnStartup: "false"
-  Services__RatesApi: http://rates-api:8080 # nome do Service do Rates
-  Kafka__BootstrapServers: kafka:9092 # Passo 21: nome do Service do Kafka (o Payments agora é falado por ele)
----
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler # mesmo padrão do rates-api.yaml
 metadata:
-  name: orders-api
+  name: payments-api
   namespace: minicambio
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: orders-api
+    name: payments-api
   minReplicas: 1
-  maxReplicas: 3 # = partições do tópico minicambio.payment-results; acima disso sobraria consumidor parado
+  maxReplicas: 3 # = partições do tópico minicambio.payment-requests; acima disso sobraria consumidor parado
   metrics:
     - type: Resource
       resource:

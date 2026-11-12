@@ -6,6 +6,7 @@
 #   e disco próprios e estáveis) ou gerenciados por um operador como o Strimzi. Por ora segue o padrão dos bancos.
 # - No compose há também a porta 9094 para o host (dotnet run). Aqui só a 9092, de dentro do cluster.
 # - Ordem de deploy: este arquivo → Job kafka-topics (kafka-topics.yaml) → APIs.
+# Passo 26.8: o ConfigMap saiu deste arquivo; o Kustomize o gera, com hash no nome, a partir do kafka/kafka.env.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -109,27 +110,3 @@ spec:
               app: kafka-topics
       ports:
         - port: 9092
----
-apiVersion: v1
-kind: ConfigMap # o "environment:" do compose; a imagem converte cada KAFKA_X_Y em x.y do server.properties
-metadata:
-  name: kafka
-  namespace: minicambio
-data:
-  CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk # id fixo do cluster, o mesmo do compose (kafka-storage.sh random-uuid)
-  KAFKA_NODE_ID: "1"
-  KAFKA_PROCESS_ROLES: broker,controller
-  KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
-  KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
-  KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092 # o endereço que o broker devolve aos clientes: o nome do Service
-  KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
-  KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-  KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
-  KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
-  KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
-  KAFKA_SHARE_COORDINATOR_STATE_TOPIC_REPLICATION_FACTOR: "1"
-  KAFKA_SHARE_COORDINATOR_STATE_TOPIC_MIN_ISR: "1"
-  KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
-  KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false" # os tópicos são criados pelo Job kafka-topics
-  KAFKA_LOG_DIRS: /var/lib/kafka/data
-  KAFKA_HEAP_OPTS: -Xms256m -Xmx384m

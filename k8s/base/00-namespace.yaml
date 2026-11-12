@@ -8,8 +8,10 @@
 # Cuidado: apagar o namespace apaga TUDO dentro dele, inclusive os PVCs e os dados dos bancos.
 # "kubectl delete -f k8s/00-namespace.yaml" equivale a um "docker compose down -v".
 # Pastas (organização de 2026-11-12): um arquivo por componente, numa pasta por serviço (rates/, orders/,
-# payments/, web/, kafka/, entrada/). O "00-" põe este arquivo em primeiro no "kubectl apply -R -f k8s/", que
-# percorre as pastas em ordem alfabética; sem o -R, o kubectl ignora as subpastas.
+# payments/, web/, kafka/, entrada/). O "00-" punha este arquivo em primeiro no antigo "kubectl apply -R -f k8s/".
+# Passo 26: tudo isto virou a base do Kustomize (k8s/base/). Aplica-se por ambiente, com
+# "kubectl apply -k k8s/overlays/<ambiente>", e o Kustomize já põe o Namespace em primeiro sozinho. O
+# "minicambio" daqui é só o valor inicial: cada overlay troca o nome pelo campo "namespace:".
 apiVersion: v1
 kind: Namespace
 metadata:

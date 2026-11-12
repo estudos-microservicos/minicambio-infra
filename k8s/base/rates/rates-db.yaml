@@ -10,6 +10,7 @@
 #   No Passo 16.3, o Job rates-migrations também passou a entrar.
 # - ConfigMap (Passo 20): POSTGRES_DB, POSTGRES_USER e PGDATA saíram do "env" para o ConfigMap "rates-db" (fim do
 #   arquivo), lido via envFrom. A senha continua no Secret de mesmo nome (tipos diferentes podem repetir o nome).
+# Passo 26.8: o ConfigMap saiu deste arquivo; o Kustomize o gera, com hash no nome, a partir do rates/rates-db.env.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -114,13 +115,3 @@ spec:
     requests:
       storage: 1Gi
   # sem storageClassName: usa o StorageClass padrão do cluster (no Docker Desktop, o "hostpath")
----
-apiVersion: v1
-kind: ConfigMap # o "environment:" do compose, fora do Deployment; o Pod só lê os valores ao subir
-metadata:
-  name: rates-db # mesmo nome do Secret: são tipos diferentes, então não há conflito
-  namespace: minicambio
-data:
-  POSTGRES_DB: rates
-  POSTGRES_USER: rates
-  PGDATA: /var/lib/postgresql/data/pgdata # subpasta do disco: o Postgres exige uma pasta vazia para inicializar

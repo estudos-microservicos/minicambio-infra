@@ -10,6 +10,7 @@
 #   do arquivo): de 1 a 3 Pods, conforme a CPU.
 # Ainda provisório: a imagem só existe no Docker local (imagePullPolicy: Never).
 # Passo 25.5: behavior no HPA (fim do arquivo), igual ao do Rates: sobe 1 Pod a cada 30 s e desce após 1 min.
+# Passo 26.8: o ConfigMap saiu deste arquivo; o Kustomize o gera, com hash no nome, a partir do web/web.env.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -67,14 +68,6 @@ spec:
   ports:
     - port: 3000 # porta do Service dentro do cluster; é a que o Ingress cita em backend.service.port
       targetPort: 8080 # porta do nginx no container
----
-apiVersion: v1
-kind: ConfigMap # o "environment:" do compose, fora do Deployment; o Pod só lê os valores ao subir
-metadata:
-  name: web
-  namespace: minicambio
-data:
-  ORDERS_API_URL: http://orders-api:8080 # nome do Service do Orders
 ---
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler # mesmo padrão do rates-api.yaml

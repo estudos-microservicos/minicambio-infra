@@ -1,0 +1,62 @@
+# Passo 26.2: a base do Kustomize, ou seja, o que é igual em todos os ambientes (os manifests até o Passo 25).
+# Não é aplicada sozinha: cada ambiente (k8s/overlays/dev, k8s/overlays/prod) a inclui e muda só o que é dele.
+# - Equivalente no compose: o docker-compose.yml principal; os overlays fariam o papel de um
+#   docker-compose.override.yml (ou de "-f docker-compose.yml -f docker-compose.prod.yml").
+# - O skooner.yaml fica fora de propósito (em k8s/, ao lado): ele é do cluster (kube-system), não de um ambiente.
+# - secrets.yaml não é versionado (.gitignore); sem ele, o Kustomize recusa montar. Modelo: secrets.yaml.example.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - 00-namespace.yaml
+  - secrets.yaml
+  - rates/rates-db.yaml
+  - rates/rates-cache.yaml
+  - rates/rates-migrations.yaml
+  - rates/rates-api.yaml
+  - payments/payments-db.yaml
+  - payments/payments-migrations.yaml
+  - payments/payments-api.yaml
+  - orders/orders-db.yaml
+  - orders/orders-migrations.yaml
+  - orders/orders-api.yaml
+  - kafka/kafka.yaml
+  - kafka/kafka-topics.yaml
+  - web/web.yaml
+  - entrada/ingress.yaml
+
+# Passo 26.6: ConfigMaps gerados pelo Kustomize, em vez de escritos à mão nos manifests.
+# - O nome ganha um sufixo com o hash do conteúdo (orders-api-<hash>), e o Kustomize troca esse nome em quem
+#   referencia o ConfigMap (o envFrom do Deployment). Mudou um valor, muda o hash, muda o Deployment, e o
+#   rollout acontece sozinho: resolve o "configmap configured / deployment unchanged" do Passo 20.
+# - O ConfigMap antigo (com o hash anterior) não é apagado pelo apply: fica sobrando no cluster.
+# - Passo 26.8: todos os ConfigMaps passaram a ser gerados. Os dos bancos e o do Kafka também: mudar um valor
+#   recria o Pod do banco (strategy Recreate, alguns segundos fora), e os dados ficam no PVC.
+configMapGenerator:
+  - name: orders-api
+    envs: # arquivo CHAVE=valor, como o "env_file:" do compose
+      - orders/orders-api.env
+  - name: orders-db
+    envs:
+      - orders/orders-db.env
+  - name: payments-api
+    envs:
+      - payments/payments-api.env
+  - name: payments-db
+    envs:
+      - payments/payments-db.env
+  - name: rates-api
+    envs:
+      - rates/rates-api.env
+  - name: rates-db
+    envs:
+      - rates/rates-db.env
+  - name: rates-cache
+    files: # o arquivo inteiro vira UMA chave (redis.conf), montada como arquivo pelo volume "config"
+      - rates/redis.conf
+  - name: kafka
+    envs:
+      - kafka/kafka.env
+  - name: web
+    envs:
+      - web/web.env
