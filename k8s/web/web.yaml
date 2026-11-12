@@ -9,6 +9,7 @@
 # - Autoscaling (Passo 23.7): o número de Pods saiu do Deployment (sem "replicas") e passou para o HPA "web" (fim
 #   do arquivo): de 1 a 3 Pods, conforme a CPU.
 # Ainda provisório: a imagem só existe no Docker local (imagePullPolicy: Never).
+# Passo 25.5: behavior no HPA (fim do arquivo), igual ao do Rates: sobe 1 Pod a cada 30 s e desce após 1 min.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -94,3 +95,11 @@ spec:
         target:
           type: Utilization # porcentagem do requests.cpu do nginx (50m), então 50% = 25m
           averageUtilization: 50
+  behavior: # Passo 25.5: mesma velocidade do rates-api.yaml (sem o campo, valem os padrões)
+    scaleDown:
+      stabilizationWindowSeconds: 60 # padrão: 300; só remove Pod se a carga ficou baixa no último 1 min
+    scaleUp:
+      policies:
+        - type: Pods
+          value: 1 # no máximo 1 Pod novo a cada 30 s (o padrão: até 4 Pods ou o dobro a cada 15 s)
+          periodSeconds: 30

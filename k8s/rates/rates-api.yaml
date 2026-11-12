@@ -18,6 +18,8 @@
 #   HorizontalPodAutoscaler "rates-api" (fim do arquivo): de 1 a 3 Pods, conforme a CPU. Exige o metrics-server.
 # - PodDisruptionBudget (Passo 24.2): pelo menos 1 Pod do Rates de pé durante um "kubectl drain" (fim do arquivo).
 #   Passo 24.4: o HPA passou a manter no mínimo 2 Pods; com 1, o drain nunca terminaria.
+# - behavior do HPA (Passo 25.2): desce depois de 1 min de carga baixa, e não dos 5 min do padrão.
+#   Passo 25.4: sobe de 1 em 1 Pod a cada 30 s, e o teto passou de 3 para 5 Pods.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -137,7 +139,9 @@ spec:
     kind: Deployment
     name: rates-api
   minReplicas: 2 # Passo 24.4: parado, fica com 2 Pods (com 1, o PDB travaria qualquer "kubectl drain")
-  maxReplicas: 3 # nunca passa de 3, por mais carga que chegue
+  # Passo 25.4: era 3; o Rates não lê Kafka, então não tem o teto das 3 partições. Com 2 a 5, sobram 3 degraus
+  # para o scaleUp abaixo subir de um em um
+  maxReplicas: 5 # nunca passa de 5, por mais carga que chegue
   metrics:
     - type: Resource # CPU medida pelo metrics-server
       resource:
@@ -145,6 +149,14 @@ spec:
         target:
           type: Utilization # porcentagem do requests.cpu do container (100m), não da máquina
           averageUtilization: 50 # alvo: média de 50m por Pod; acima disso ele cria Pods, abaixo ele remove
+  behavior: # Passo 25.2: a VELOCIDADE com que o HPA chega ao número de Pods (sem o campo, valem os padrões)
+    scaleDown: # a regra de descer
+      stabilizationWindowSeconds: 60 # padrão: 300; só remove Pod se a carga ficou baixa no último 1 min
+    scaleUp: # Passo 25.4: a regra de subir; sem ela, sobe até 4 Pods ou o dobro a cada 15 s
+      policies:
+        - type: Pods # limite em número de Pods (a outra opção é Percent, em % dos Pods atuais)
+          value: 1 # no máximo 1 Pod novo...
+          periodSeconds: 30 # ...a cada 30 s: de 2 para 5 leva pelo menos 1 min e meio
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget # sem equivalente no compose: lá não existem nós nem manutenção de nó
