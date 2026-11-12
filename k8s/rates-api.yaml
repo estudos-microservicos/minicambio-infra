@@ -16,6 +16,8 @@
 #   readiness: fora do ar, a API segue respondendo sem cache.
 # - Autoscaling (Passo 23.4): o número de Pods saiu do Deployment (sem "replicas") e passou para o
 #   HorizontalPodAutoscaler "rates-api" (fim do arquivo): de 1 a 3 Pods, conforme a CPU. Exige o metrics-server.
+# - PodDisruptionBudget (Passo 24.2): pelo menos 1 Pod do Rates de pé durante um "kubectl drain" (fim do arquivo).
+#   Passo 24.4: o HPA passou a manter no mínimo 2 Pods; com 1, o drain nunca terminaria.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -134,7 +136,7 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: rates-api
-  minReplicas: 1 # parado, fica com 1 Pod
+  minReplicas: 2 # Passo 24.4: parado, fica com 2 Pods (com 1, o PDB travaria qualquer "kubectl drain")
   maxReplicas: 3 # nunca passa de 3, por mais carga que chegue
   metrics:
     - type: Resource # CPU medida pelo metrics-server
@@ -143,3 +145,14 @@ spec:
         target:
           type: Utilization # porcentagem do requests.cpu do container (100m), não da máquina
           averageUtilization: 50 # alvo: média de 50m por Pod; acima disso ele cria Pods, abaixo ele remove
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget # sem equivalente no compose: lá não existem nós nem manutenção de nó
+metadata:
+  name: rates-api
+  namespace: minicambio
+spec:
+  selector: # quais Pods a regra protege: os mesmos que o Service e o Deployment enxergam
+    matchLabels:
+      app: rates-api
+  minAvailable: 1 # durante um "drain", nunca deixar menos de 1 Pod do Rates pronto (readiness ok)
