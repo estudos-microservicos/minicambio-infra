@@ -6,7 +6,10 @@
 # - A label kubernetes.io/metadata.name é colocada pelo próprio Kubernetes em todo namespace; não precisa
 #   estar aqui (é a que o namespaceSelector do Passo 18.3 usa para achar o ingress-nginx).
 # Cuidado: apagar o namespace apaga TUDO dentro dele, inclusive os PVCs e os dados dos bancos.
-# "kubectl delete -f k8s/namespace.yaml" equivale a um "docker compose down -v".
+# "kubectl delete -f k8s/00-namespace.yaml" equivale a um "docker compose down -v".
+# Pastas (organização de 2026-11-12): um arquivo por componente, numa pasta por serviço (rates/, orders/,
+# payments/, web/, kafka/, entrada/). O "00-" põe este arquivo em primeiro no "kubectl apply -R -f k8s/", que
+# percorre as pastas em ordem alfabética; sem o -R, o kubectl ignora as subpastas.
 apiVersion: v1
 kind: Namespace
 metadata:
