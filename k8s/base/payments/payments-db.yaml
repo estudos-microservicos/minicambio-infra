@@ -1,6 +1,6 @@
 # Passo 8: o Postgres do Payments (equivalente ao serviço payments-db do docker-compose.yml).
 # Mesmo padrão do rates-db.yaml: Deployment (mantém 1 Pod rodando) + Service (endereço fixo "payments-db").
-# Passo 11: a senha vem do Secret "payments-db" (definido em secrets.yaml, fora do git).
+# Passo 11: a senha vem do Secret "payments-db" (Passo 26.9: gerado por ambiente, k8s/overlays/<ambiente>/secrets/, fora do git).
 # Passo 12: os dados ficam no PersistentVolumeClaim "payments-db-data" (o volume payments-db-data do compose).
 # Passo 13.2: probes do tipo exec com pg_isready, como no rates-db.yaml.
 # Passo 15.2: NetworkPolicy "payments-db" (a rede payments-net do compose): só o payments-api entra na porta 5432.

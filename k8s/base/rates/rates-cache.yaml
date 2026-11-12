@@ -5,7 +5,7 @@
 #   Por isso também não precisa de "strategy: Recreate" (não há disco para dois Pods disputarem).
 # - A configuração do Redis é um ARQUIVO (redis.conf) e não variáveis de ambiente: o ConfigMap guarda o conteúdo do
 #   arquivo e é montado como volume dentro do container. No compose, as mesmas opções vão como flags no "command".
-# - Senha: Secret "rates-cache" (k8s/secrets.yaml), lida pelo Redis e pelo rates-api.
+# - Senha: Secret "rates-cache" (Passo 26.9: k8s/overlays/<ambiente>/secrets/rates-cache.env), lida pelo Redis e pelo rates-api.
 # - Fora da readiness do rates-api de propósito: sem Redis a API continua respondendo, só que sem cache.
 # Passo 26.8: o ConfigMap saiu deste arquivo; o Kustomize o gera, com hash no nome, a partir do rates/redis.conf (files:, em vez de envs:; o nome no volume "config" também é trocado).
 apiVersion: apps/v1

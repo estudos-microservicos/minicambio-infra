@@ -1,7 +1,7 @@
 # Passo 6: o Postgres do Rates (equivalente ao serviço rates-db do docker-compose.yml).
 # - Deployment (Passo 4): garante que exista sempre 1 Pod rodando; se o Pod sumir, ele cria outro.
 # - Service (Passo 6): dá ao banco o endereço fixo "rates-db", como o nome do serviço no compose.
-# - Secret (Passo 11): a senha vem do Secret "rates-db" (definido em secrets.yaml, fora do git); faz o papel do
+# - Secret (Passo 11): a senha vem do Secret "rates-db" (Passo 26.9: gerado por ambiente, k8s/overlays/<ambiente>/secrets/, fora do git); faz o papel do
 #   .env do compose.
 # - PersistentVolumeClaim (Passo 12): o disco dos dados, que sobrevive ao Pod; equivale ao volume nomeado
 #   rates-db-data do compose.

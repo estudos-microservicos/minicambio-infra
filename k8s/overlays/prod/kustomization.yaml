@@ -29,3 +29,22 @@ configMapGenerator:
     behavior: merge
     literals:
       - ASPNETCORE_ENVIRONMENT=Production
+
+# Passo 26.9: as senhas do PROD (as mesmas de antes, que já estão gravadas no disco dos bancos).
+# - secretGenerator é o irmão do configMapGenerator: nome com hash e troca do nome em todo secretKeyRef
+#   (Deployments e Jobs de migração). Os arquivos secrets/*.env ficam fora do git; modelos: secrets/*.env.example.
+# - Cuidado: o Postgres só lê a senha ao criar o banco. Trocar aqui não troca a senha de um banco existente
+#   (exigiria ALTER USER); o Redis lê a cada subida, então nele basta trocar.
+secretGenerator:
+  - name: rates-db
+    envs:
+      - secrets/rates-db.env
+  - name: payments-db
+    envs:
+      - secrets/payments-db.env
+  - name: orders-db
+    envs:
+      - secrets/orders-db.env
+  - name: rates-cache
+    envs:
+      - secrets/rates-cache.env

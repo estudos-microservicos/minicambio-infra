@@ -1,8 +1,8 @@
 # Variáveis de ambiente locais (credenciais dos bancos)
 .env
 
-# Secrets do Kubernetes com as senhas reais (o modelo versionado é k8s/base/secrets.yaml.example)
-k8s/base/secrets.yaml
+# Senhas reais dos Secrets, uma pasta por ambiente (Passo 26.9; os modelos versionados são os *.env.example)
+k8s/overlays/*/secrets/*.env
 
 # Editores e sistema operacional
 .vs/

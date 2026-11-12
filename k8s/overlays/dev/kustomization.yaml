@@ -16,6 +16,22 @@ namespace: minicambio-dev # troca o namespace de tudo, e o nome do Namespace da 
 resources:
   - ../../base
 
+# Passo 26.9: senhas próprias do DEV, diferentes das do PROD (mesmo mecanismo do overlays/prod; ver lá).
+# Os arquivos secrets/*.env ficam fora do git; modelos: secrets/*.env.example.
+secretGenerator:
+  - name: rates-db
+    envs:
+      - secrets/rates-db.env
+  - name: payments-db
+    envs:
+      - secrets/payments-db.env
+  - name: orders-db
+    envs:
+      - secrets/orders-db.env
+  - name: rates-cache
+    envs:
+      - secrets/rates-cache.env
+
 patches:
   # "$patch: delete" é um patch que, em vez de mudar campos, remove o recurso inteiro do resultado.
   # O "target" escolhe a quem ele se aplica: todos os HPAs, qualquer que seja o nome.

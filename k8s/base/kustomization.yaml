@@ -3,13 +3,12 @@
 # - Equivalente no compose: o docker-compose.yml principal; os overlays fariam o papel de um
 #   docker-compose.override.yml (ou de "-f docker-compose.yml -f docker-compose.prod.yml").
 # - O skooner.yaml fica fora de propósito (em k8s/, ao lado): ele é do cluster (kube-system), não de um ambiente.
-# - secrets.yaml não é versionado (.gitignore); sem ele, o Kustomize recusa montar. Modelo: secrets.yaml.example.
+# - Passo 26.9: os Secrets saíram da base. Cada overlay gera os seus (secretGenerator), com senhas próprias.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 resources:
   - 00-namespace.yaml
-  - secrets.yaml
   - rates/rates-db.yaml
   - rates/rates-cache.yaml
   - rates/rates-migrations.yaml
