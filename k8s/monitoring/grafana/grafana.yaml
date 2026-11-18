@@ -49,6 +49,16 @@ spec:
             limits:
               cpu: 500m
               memory: 512Mi
+          # Passo 27.8: na 1ª subida o Grafana cria o banco SQLite (centenas de migrations) e passou dos 60 s que a
+          # liveness tolera (6 x 10 s): foi morto uma vez no meio do trabalho. A startupProbe resolve isso: enquanto
+          # ela não passa, a liveness e a readiness nem rodam. Aqui ela espera até 5 min (60 x 5 s); quando passa
+          # uma vez, sai de cena para sempre (até o container reiniciar) e as outras duas assumem.
+          startupProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            periodSeconds: 5
+            failureThreshold: 60
           readinessProbe:
             httpGet:
               path: /api/health # responde 200 quando o servidor e o banco SQLite estão de pé

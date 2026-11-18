@@ -17,6 +17,7 @@ configMapGenerator:
     namespace: monitoring
     files:
       - prometheus/prometheus.yml
+      - prometheus/alertas.yml # Passo 27.9: segunda chave do mesmo ConfigMap = segundo arquivo na pasta
   - name: grafana-datasources
     namespace: monitoring
     files:
