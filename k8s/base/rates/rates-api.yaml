@@ -21,6 +21,8 @@
 # - behavior do HPA (Passo 25.2): desce depois de 1 min de carga baixa, e não dos 5 min do padrão.
 #   Passo 25.4: sobe de 1 em 1 Pod a cada 30 s, e o teto passou de 3 para 5 Pods.
 # Passo 26.8: o ConfigMap saiu deste arquivo; o Kustomize o gera, com hash no nome, a partir do rates/rates-api.env.
+# - Métricas (Passo 27.6): a API publica GET /metrics (OpenTelemetry). As anotações prometheus.io/* no template
+#   avisam o Prometheus (namespace monitoring) para coletar cada Pod; a NetworkPolicy libera o Prometheus na 8080.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -36,6 +38,10 @@ spec:
     metadata:
       labels:
         app: rates-api
+      annotations: # Passo 27.6: lidas pelo job kubernetes-pods do prometheus.yml (convenção, não regra do Kubernetes)
+        prometheus.io/scrape: "true" # entre aspas: anotação só aceita texto
+        prometheus.io/port: "8080"
+        prometheus.io/path: /metrics
     spec:
       containers:
         - name: api
@@ -115,6 +121,12 @@ spec:
           podSelector: # SEM hífen: mesmo item do namespaceSelector, então vale "E" (só o controlador de lá)
             matchLabels:
               app.kubernetes.io/component: controller
+        - namespaceSelector: # Passo 27.6: o Prometheus, que coleta o /metrics de cada Pod
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+          podSelector: # mesmo item: E
+            matchLabels:
+              app: prometheus
       ports:
         - port: 8080
 ---

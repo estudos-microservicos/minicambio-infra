@@ -3,6 +3,8 @@
 
 # Senhas reais dos Secrets, uma pasta por ambiente (Passo 26.9; os modelos versionados são os *.env.example)
 k8s/overlays/*/secrets/*.env
+# Senha do admin do Grafana (Passo 27.4; o modelo é o grafana.env.example)
+k8s/monitoring/secrets/*.env
 
 # Editores e sistema operacional
 .vs/

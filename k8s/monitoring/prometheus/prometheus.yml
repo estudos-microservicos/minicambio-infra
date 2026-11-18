@@ -1,0 +1,65 @@
+# Passo 27.2: configuração do Prometheus (vira o ConfigMap "prometheus-config", gerado pelo kustomization.yaml).
+# Passo 27.3: + CPU e memória de cada container, lidas do kubelet de cada nó.
+# Passo 27.6: + o /metrics de cada Pod anotado com prometheus.io/scrape (as 3 APIs, nos dois ambientes).
+global:
+  scrape_interval: 15s # de quanto em quanto tempo ele busca as métricas de cada alvo
+  evaluation_interval: 15s # de quanto em quanto tempo avalia regras (ainda não há nenhuma)
+
+scrape_configs:
+  # Cada "job" é um grupo de alvos. Este tem um alvo fixo (static_configs): o próprio Prometheus,
+  # que publica as métricas dele em http://localhost:9090/metrics, dentro do mesmo container.
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # Passo 27.3: o cAdvisor, embutido no kubelet de cada nó, mede CPU, memória, rede e disco de cada container.
+  # - kubernetes_sd_configs com role "node": em vez de um alvo fixo, o Prometheus pergunta à API do Kubernetes
+  #   quais nós existem (permissão "list/watch nodes" do 27.1) e cria um alvo por nó, no IP do nó, porta 10250
+  #   (a do kubelet). Num cluster de 3 nós seriam 3 alvos, sem mudar nada aqui.
+  # - O kubelet exige login: o Prometheus manda o token da própria ServiceAccount, que o Kubernetes monta em todo
+  #   Pod nesse caminho. O kubelet confere com a API se a conta pode "get nodes/metrics" (o 27.1 deu).
+  # - insecure_skip_verify: o certificado do kubelet do Docker Desktop não traz o IP do nó (o mesmo erro "doesn't
+  #   contain any IP SANs" do metrics-server no Passo 23.2). Só para cluster local.
+  - job_name: kubelet-cadvisor
+    scheme: https
+    metrics_path: /metrics/cadvisor
+    authorization:
+      credentials_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+    tls_config:
+      insecure_skip_verify: true
+    kubernetes_sd_configs:
+      - role: node
+
+  # Passo 27.6: o /metrics das APIs, Pod a Pod (pelo Service ou pelo Ingress, cada coleta cairia num Pod sorteado,
+  # e cada Pod só conhece os próprios contadores).
+  # - role "pod": o Prometheus recebe da API do Kubernetes TODOS os Pods do cluster (permissão do 27.1), cada um
+  #   com etiquetas temporárias "__meta_kubernetes_..." (namespace, nome, IP, labels e anotações do Pod).
+  # - relabel_configs: regras aplicadas a cada Pod descoberto, ANTES da coleta, de cima para baixo. Servem para
+  #   filtrar (keep/drop), montar o endereço e escolher quais etiquetas ficam gravadas nas séries. As que começam
+  #   com "__" somem no fim; só sobrevivem as copiadas para um nome sem "__".
+  - job_name: kubernetes-pods
+    kubernetes_sd_configs:
+      - role: pod
+    relabel_configs:
+      # 1) Só os Pods com a anotação prometheus.io/scrape: "true". Os outros (bancos, Kafka, ingress...) saem aqui.
+      #    Pontos e barras do nome da anotação viram "_" no nome da etiqueta.
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+        regex: "true"
+        action: keep
+      # 2) O caminho da coleta vem da anotação prometheus.io/path (se ela existir; senão fica o padrão, /metrics).
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+        regex: (.+)
+        target_label: __metrics_path__
+      # 3) O endereço = IP do Pod + porta da anotação prometheus.io/port. As duas etiquetas chegam juntas,
+      #    separadas por ";", e o regex devolve as duas partes como $1 e $2.
+      - source_labels: [__meta_kubernetes_pod_ip, __meta_kubernetes_pod_annotation_prometheus_io_port]
+        regex: (.+);(.+)
+        replacement: $1:$2
+        target_label: __address__
+      # 4) Etiquetas que ficam gravadas em cada série, para filtrar nas consultas: ambiente, Pod e aplicação.
+      - source_labels: [__meta_kubernetes_namespace]
+        target_label: namespace
+      - source_labels: [__meta_kubernetes_pod_name]
+        target_label: pod
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        target_label: app

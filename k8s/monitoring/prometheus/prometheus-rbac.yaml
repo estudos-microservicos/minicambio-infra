@@ -1,0 +1,49 @@
+# Passo 27.1: a identidade do Prometheus e o que ela pode ler na API do Kubernetes (RBAC).
+# - O Prometheus não recebe uma lista fixa de IPs para coletar. Ele PERGUNTA à API do Kubernetes quais Pods e
+#   nós existem (service discovery) e acompanha as mudanças (Pod novo, IP trocado, réplica a mais do HPA).
+#   Para perguntar, precisa de uma identidade (ServiceAccount) e de permissão (ClusterRole + ClusterRoleBinding).
+# - Equivalente no compose: não há. No compose o prometheus.yml listaria os alvos à mão ("orders-api:8080"), e
+#   nada controla o que um container pode consultar.
+# - Três peças, que funcionam como crachá, cargo e nomeação:
+#     ServiceAccount     = o crachá (quem é). Os Pods do Prometheus vão usar esta conta.
+#     ClusterRole        = o cargo (o que se pode fazer). Só a lista de permissões, ainda sem dono.
+#     ClusterRoleBinding = a nomeação (liga o cargo ao crachá). Sem ela, a conta não pode nada.
+# - "Cluster" no nome = vale em todos os namespaces. Role/RoleBinding valeriam só em um. Aqui precisa ser
+#   cluster porque o Prometheus vai olhar o minicambio, o minicambio-dev e os nós (que não têm namespace).
+# - Diferente do Skooner (cluster-admin), aqui vale o mínimo necessário: só leitura, e nada de Secrets.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus
+  namespace: monitoring # ServiceAccount fica dentro de um namespace
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: prometheus # ClusterRole não tem namespace: vale para o cluster todo
+rules:
+  # Descobrir os alvos: listar nós, Pods, Services e EndpointSlices e acompanhar mudanças ("watch").
+  - apiGroups: [""] # "" = grupo principal da API (o "v1" de Pod, Service, Node)
+    resources: ["nodes", "pods", "services"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["discovery.k8s.io"] # EndpointSlice tem grupo próprio (o antigo Endpoints está obsoleto)
+    resources: ["endpointslices"]
+    verbs: ["get", "list", "watch"]
+  # Ler as métricas que o kubelet de cada nó publica (CPU e memória de cada container, via cAdvisor).
+  # "nodes/metrics" é uma sub-rota do nó; não confundir com "nodes/proxy", que daria muito mais poder.
+  - apiGroups: [""]
+    resources: ["nodes/metrics"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: prometheus
+roleRef: # o cargo (não pode ser trocado depois de criado: para mudar, apaga e recria o binding)
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: prometheus
+subjects: # quem recebe o cargo
+  - kind: ServiceAccount
+    name: prometheus
+    namespace: monitoring

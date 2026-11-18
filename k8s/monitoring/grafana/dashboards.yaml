@@ -1,0 +1,14 @@
+# Passo 27.7: "provedor" de dashboards por arquivo. Diz ao Grafana: ao subir (e a cada 30 s), leia os .json desta
+# pasta e mostre-os como dashboards. Vira o ConfigMap "grafana-dashboard-provider", montado em
+# /etc/grafana/provisioning/dashboards. Os .json em si vêm de outro ConfigMap ("grafana-dashboards"), montado na
+# pasta indicada em options.path.
+apiVersion: 1
+providers:
+  - name: minicambio
+    folder: MiniCâmbio # pasta onde os dashboards aparecem na tela
+    type: file
+    disableDeletion: true # não dá para apagar pela tela
+    allowUiUpdates: false # dá para mexer na tela, mas não salvar: quem manda é o arquivo
+    updateIntervalSeconds: 30
+    options:
+      path: /etc/grafana/dashboards
