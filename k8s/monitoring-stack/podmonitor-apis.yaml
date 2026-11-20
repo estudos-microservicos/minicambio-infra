@@ -1,0 +1,33 @@
+# Passo 32.4: coleta do /metrics das 3 APIs, Pod a Pod, nos dois ambientes.
+# - Substitui o job "kubernetes-pods" do prometheus.yml antigo (Passo 27.6) e as anotações prometheus.io/* nos
+#   Deployments: em vez de cada Pod se anunciar, o PodMonitor diz QUAIS Pods coletar, pelas labels deles.
+# - Quem lê este objeto é o Prometheus Operator: ele gera o trecho equivalente do prometheus.yml (com os mesmos
+#   kubernetes_sd_configs e relabel_configs que escrevemos à mão) e recarrega o Prometheus.
+# - ServiceMonitor x PodMonitor: o primeiro acha os Pods pelo Service (EndpointSlices); este vai direto nos Pods.
+#   As APIs têm Service, mas a porta dele não tem nome; o PodMonitor aceita o número da porta do container.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: minicambio-apis
+spec:
+  namespaceSelector: # onde procurar (o PodMonitor fica no monitoring-stack; os Pods, nos ambientes)
+    matchNames:
+      - minicambio
+      - minicambio-dev
+  selector: # quais Pods: os das 3 APIs (o web não publica /metrics)
+    matchExpressions:
+      - key: app
+        operator: In
+        values: [rates-api, orders-api, payments-api]
+  podTargetLabels: [app] # copia a label "app" do Pod para cada série (os dashboards e alertas agrupam por app)
+  podMetricsEndpoints:
+    - portNumber: 8080
+      path: /metrics
+      interval: 15s
+      relabelings:
+        # O Operator daria job="monitoring-stack/minicambio-apis"; um nome curto deixa as consultas mais legíveis.
+        # "action: replace" é o padrão, mas fica escrito: a CRD o grava sozinha e, sem ele aqui, cada "apply"
+        # veria a lista diferente e sairia "configured" sem mudança nenhuma.
+        - action: replace
+          targetLabel: job
+          replacement: minicambio-apis

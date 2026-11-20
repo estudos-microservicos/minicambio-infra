@@ -1,9 +1,0 @@
-# Passo 27.1: namespace do monitoramento (Prometheus e Grafana).
-# - Fica fora da base do MiniCâmbio (k8s/base) e dos overlays: é UM monitoramento para o cluster todo, que vai
-#   observar os dois ambientes (minicambio e minicambio-dev). Mesmo raciocínio do ingress-nginx e do Skooner.
-# - Equivalente no compose: não há. Seria um segundo projeto do compose (outra pasta, outro "-p").
-# Cuidado: apagar o namespace apaga o histórico de métricas guardado no disco do Prometheus.
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: monitoring

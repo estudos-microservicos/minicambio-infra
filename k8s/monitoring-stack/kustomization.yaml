@@ -1,0 +1,39 @@
+# Passo 32: o que é NOSSO no monitoramento, por cima do kube-prometheus-stack (instalado pelo Helm; ver
+# values.yaml desta pasta). Aplicar DEPOIS do helm, que instala as CRDs (PodMonitor, PrometheusRule):
+#   kubectl apply -k k8s/monitoring-stack
+# Helm x Kustomize aqui: o Helm gera e instala o pacote de terceiros (o chart); o Kustomize cuida dos nossos
+# arquivos. Cada um tem o seu dono: o Helm não sabe destes objetos, e o "helm uninstall" não os apaga.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: monitoring-stack
+
+resources:
+  - podmonitor-apis.yaml
+  - regras-minicambio.yaml
+
+configMapGenerator:
+  # O dashboard do Passo 27.7. O sidecar do Grafana acha o ConfigMap pela etiqueta e põe na pasta da anotação.
+  # Sem hash no nome: o sidecar troca o dashboard na hora, sem reiniciar o Pod; com hash, cada mudança deixaria
+  # o ConfigMap antigo para trás (o apply não apaga) e o mesmo dashboard apareceria duas vezes.
+  - name: grafana-dashboard-minicambio
+    files:
+      - dashboards/minicambio-apis.json
+    options:
+      disableNameSuffixHash: true
+      labels:
+        grafana_dashboard: "1"
+      annotations:
+        grafana_folder: MiniCâmbio
+
+secretGenerator:
+  # Senha do admin do Grafana (password=..., em secrets/grafana.env, fora do git). Sem hash: o values.yaml do
+  # Helm aponta para o nome fixo "grafana-admin" e não acompanharia o hash. Como no Passo 27.4, a senha só vale
+  # na 1ª subida (depois fica gravada no PVC do Grafana).
+  - name: grafana-admin
+    envs:
+      - secrets/grafana.env
+    literals:
+      - user=admin
+    options:
+      disableNameSuffixHash: true

@@ -23,7 +23,8 @@
 # k8s/base/kustomization.yaml) a partir do orders/orders-api.env, com um hash no nome ("orders-api-<hash>").
 # O Kustomize também troca o nome no envFrom abaixo; por isso o Deployment muda junto e recria os Pods.
 # - Métricas (Passo 27.6): a API publica GET /metrics (OpenTelemetry). As anotações prometheus.io/* no template
-#   avisam o Prometheus (namespace monitoring) para coletar cada Pod; a NetworkPolicy libera o Prometheus na 8080.
+#   avisavam o Prometheus para coletar cada Pod. Passo 32: quem escolhe os Pods agora é o PodMonitor
+#   (k8s/monitoring-stack), pela label app; as anotações saíram. A NetworkPolicy libera o Prometheus na 8080.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -39,10 +40,6 @@ spec:
     metadata:
       labels:
         app: orders-api
-      annotations: # Passo 27.6: lidas pelo job kubernetes-pods do prometheus.yml (convenção, não regra do Kubernetes)
-        prometheus.io/scrape: "true" # entre aspas: anotação só aceita texto
-        prometheus.io/port: "8080"
-        prometheus.io/path: /metrics
     spec:
       containers:
         - name: api
@@ -115,12 +112,12 @@ spec:
           podSelector: # SEM hífen: mesmo item do namespaceSelector, então vale "E" (só o controlador de lá)
             matchLabels:
               app.kubernetes.io/component: controller
-        - namespaceSelector: # Passo 27.6: o Prometheus, que coleta o /metrics de cada Pod
+        - namespaceSelector: # Passo 27.6 (Passo 32: kube-prometheus-stack): o Prometheus, que coleta o /metrics
             matchLabels:
-              kubernetes.io/metadata.name: monitoring
-          podSelector: # mesmo item: E
+              kubernetes.io/metadata.name: monitoring-stack
+          podSelector: # mesmo item: E (label que o Operator põe nos Pods do Prometheus)
             matchLabels:
-              app: prometheus
+              app.kubernetes.io/name: prometheus
       ports:
         - port: 8080
 ---

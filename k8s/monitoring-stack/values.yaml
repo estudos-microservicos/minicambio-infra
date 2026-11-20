@@ -1,0 +1,139 @@
+# Passo 32: kube-prometheus-stack (chart prometheus-community/kube-prometheus-stack, versão 92.22.0), no lugar do
+# monitoramento escrito à mão no Passo 27 (Prometheus, Grafana, Alertmanager) e no 31 (kube-state-metrics).
+# Este arquivo só traz o que MUDA em relação ao padrão do chart (helm show values ... tem mais de 6 mil linhas).
+#
+# Instalar ou atualizar (o mesmo comando serve para os dois; a ordem importa só na 1ª vez):
+#   helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+#   helm upgrade --install kps prometheus-community/kube-prometheus-stack --version 92.22.0 `
+#     -n monitoring-stack --create-namespace -f k8s/monitoring-stack/values.yaml
+#   kubectl apply -k k8s/monitoring-stack    # o que é nosso: coleta das APIs, regras, dashboard e senha do Grafana
+# (o "apply -k" depende das CRDs que o chart instala; por isso vem depois. Antes da 1ª vez: copiar
+#  secrets/grafana.env.example para secrets/grafana.env e trocar a senha.)
+#
+# Equivalente no compose: não há. O chart junta ~140 objetos e um Operator, que transforma objetos novos
+# (kind: Prometheus, Alertmanager, ServiceMonitor, PodMonitor, PrometheusRule) na configuração de cada programa.
+
+# Nomes curtos: kps-prometheus, kps-alertmanager, kps-operator... (sem isso: kps-kube-prometheus-stack-...).
+fullnameOverride: kps
+
+# O Docker Desktop roda etcd, controller-manager, scheduler e kube-proxy escutando só dentro do nó (127.0.0.1):
+# a coleta deles falharia e os alertas prontos acusariam "fora do ar" desde o 1º minuto. Desliga a coleta e as
+# regras prontas ligadas a eles. Num cluster gerenciado (EKS, GKE, AKS) eles nem aparecem: a nuvem cuida deles.
+kubeEtcd:
+  enabled: false
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeProxy:
+  enabled: false
+defaultRules:
+  rules:
+    etcd: false
+    kubeControllerManager: false
+    kubeSchedulerAlerting: false
+    kubeSchedulerRecording: false
+    kubeProxy: false
+    windows: false
+
+# node-exporter: um Pod por nó (DaemonSet) medindo a MÁQUINA (CPU, memória, rede, disco). Por padrão ele monta o
+# "/" do nó com mountPropagation HostToContainer, que a VM do Docker Desktop não permite: o container nem sobe
+# ("path / is mounted on / but it is not a shared or slave mount", CrashLoopBackOff). Sem a montagem, perde só o
+# espaço livre dos discos do nó. Num cluster de verdade, deixar o padrão.
+prometheus-node-exporter:
+  hostRootFsMount:
+    enabled: false
+
+prometheus:
+  ingress: # o Prometheus antigo só abria com port-forward
+    enabled: true
+    ingressClassName: nginx
+    hosts:
+      - prometheus.localhost
+  prometheusSpec:
+    # Por padrão o Prometheus do chart só lê ServiceMonitor/PodMonitor/PrometheusRule com a etiqueta
+    # "release: kps". Com "false", ele lê todos, de qualquer namespace (os nossos ficam em k8s/monitoring-stack).
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    retention: 7d # como no Passo 27.2
+    retentionSize: 1500MB # o PVC tem 2Gi: agora são bem mais séries (node-exporter, API server, kubelet completo)
+    resources:
+      requests:
+        cpu: 100m
+        memory: 512Mi
+      limits:
+        cpu: "1"
+        memory: 2Gi
+    # O disco: o Operator cria um StatefulSet, e o StatefulSet cria o PVC a partir deste modelo
+    # (prometheus-kps-prometheus-db-prometheus-kps-prometheus-0).
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 2Gi
+
+alertmanager:
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    hosts:
+      - alertmanager.localhost
+  alertmanagerSpec:
+    resources:
+      requests:
+        cpu: 25m
+        memory: 64Mi
+      limits:
+        cpu: 100m
+        memory: 128Mi
+  # Mesma rota do Passo 27.10 (alertmanager.yml antigo). O que não está aqui vem do padrão do chart: as
+  # inhibit_rules (um alerta "critical" cala o "warning" de mesmo nome e namespace) e o resolve_timeout.
+  config:
+    route:
+      receiver: so-na-tela
+      group_by: [alertname, namespace, app]
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 4h
+      routes:
+        # Watchdog: alerta pronto do chart que dispara SEMPRE ("o caminho dos alertas está vivo"). Serve para
+        # um serviço externo avisar quando ele PARA de chegar. Aqui vai para o receiver que descarta.
+        - receiver: "null"
+          matchers:
+            - alertname = "Watchdog"
+    receivers:
+      - name: "null"
+      - name: so-na-tela # sem integração: só aparece na tela (o destino real, 27.10.4, foi pulado)
+
+grafana:
+  # Senha do admin: Secret "grafana-admin", gerado pelo kustomization.yaml desta pasta (fora do git).
+  admin:
+    existingSecret: grafana-admin
+    userKey: user
+    passwordKey: password
+  persistence: # usuários, preferências e o que for salvo pela tela ficam num PVC, como no Passo 27.4
+    enabled: true
+    size: 1Gi
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    hosts:
+      - grafana.localhost
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  # O sidecar é um 2º container no Pod do Grafana que vigia ConfigMaps com a etiqueta grafana_dashboard: "1" e
+  # grava cada um como arquivo de dashboard, sem reiniciar nada (o provisioning do Passo 27.7, automático).
+  # A anotação grafana_folder escolhe a pasta.
+  sidecar:
+    dashboards:
+      folderAnnotation: grafana_folder
+      provider:
+        foldersFromFilesStructure: true

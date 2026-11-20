@@ -1,0 +1,80 @@
+# Passo 32.4: as 5 regras de alerta do MiniCâmbio (Passos 27.9 e 31.3), agora como objeto PrometheusRule.
+# - O conteúdo de "groups" é o mesmo do alertas.yml antigo; o Operator junta este objeto às ~35 PrometheusRule
+#   prontas do chart, valida e recarrega o Prometheus. Regra com erro de sintaxe é recusada já no "apply"
+#   (o chart instala um webhook de validação), em vez de derrubar o Prometheus.
+# - severity: trocada de critica/aviso para critical/warning, o padrão das regras prontas. Assim valem para as
+#   nossas também as inhibit_rules do Alertmanager (um "critical" cala o "warning" de mesmo nome e namespace).
+# - Algumas regras prontas se parecem com as nossas (TargetDown, KubeDeploymentReplicasMismatch,
+#   KubeQuotaAlmostFull a 90%). As nossas ficam: são mais rápidas (for menor) e falam só das APIs.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: minicambio
+spec:
+  groups:
+    - name: minicambio-apis
+      rules:
+        # Alvo descoberto, mas a coleta falha (Pod travado, /metrics quebrado). Não pega 0 réplicas: sem Pod, sem alvo.
+        - alert: AlvoForaDoAr
+          expr: up{job="minicambio-apis"} == 0
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Coleta falhando: {{ $labels.job }} em {{ $labels.instance }}"
+            description: "O Prometheus não consegue ler as métricas deste alvo há mais de 1 minuto."
+
+        # Mais de 5% das respostas de uma API são 5xx, na média dos últimos 2 minutos.
+        - alert: ApiComMuitosErros5xx
+          expr: |
+            sum by (namespace, app) (rate(http_server_request_duration_seconds_count{http_response_status_code=~"5..", http_route!~"/health/.*|/metrics"}[2m]))
+              /
+            sum by (namespace, app) (rate(http_server_request_duration_seconds_count{http_route!~"/health/.*|/metrics"}[2m]))
+              > 0.05
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "{{ $labels.app }} ({{ $labels.namespace }}) com {{ $value | humanizePercentage }} de respostas 5xx"
+            description: "Mais de 5% das respostas são erro do servidor há mais de 1 minuto."
+
+        # 95% das requisições levam mais de 1 s, por 5 minutos seguidos.
+        - alert: ApiLenta
+          expr: |
+            histogram_quantile(0.95, sum by (namespace, app, le) (rate(http_server_request_duration_seconds_bucket{http_route!~"/health/.*|/metrics"}[5m])))
+              > 1
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $labels.app }} ({{ $labels.namespace }}) lenta: p95 de {{ $value | humanizeDuration }}"
+            description: "O percentil 95 da duração das requisições passou de 1 s há mais de 5 minutos."
+
+    # Estado dos objetos, lido do kube-state-metrics (agora o do chart).
+    - name: minicambio-objetos
+      rules:
+        # Deployment com 0 Pods prontos (0 réplicas, CrashLoop, readiness falhando, Pending...).
+        - alert: ApiSemPodsProntos
+          expr: |
+            kube_deployment_status_replicas_available{namespace=~"minicambio|minicambio-dev", deployment=~".+-api|web"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            app: "{{ $labels.deployment }}"
+          annotations:
+            summary: "{{ $labels.deployment }} ({{ $labels.namespace }}) sem nenhum Pod pronto"
+            description: "O Deployment está com 0 Pods disponíveis há mais de 1 minuto: ninguém atende essa API."
+
+        # Algum item de uma ResourceQuota passou de 80% do teto (a pronta do chart, KubeQuotaAlmostFull, usa 90%).
+        - alert: CotaPertoDoTeto
+          expr: |
+            kube_resourcequota{type="used"}
+              / ignoring(type)
+            kube_resourcequota{type="hard"}
+              > 0.8
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Cota {{ $labels.resourcequota }} ({{ $labels.namespace }}): {{ $labels.resource }} em {{ $value | humanizePercentage }}"
+            description: "Este item da ResourceQuota passou de 80% do teto há mais de 2 minutos. No teto, Pods novos são recusados."
