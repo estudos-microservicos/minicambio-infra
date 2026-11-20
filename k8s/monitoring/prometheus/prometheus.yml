@@ -1,6 +1,7 @@
 # Passo 27.2: configuração do Prometheus (vira o ConfigMap "prometheus-config", gerado pelo kustomization.yaml).
 # Passo 27.3: + CPU e memória de cada container, lidas do kubelet de cada nó.
 # Passo 27.6: + o /metrics de cada Pod anotado com prometheus.io/scrape (as 3 APIs, nos dois ambientes).
+# Passo 27.10.2: + o endereço do Alertmanager (bloco "alerting").
 global:
   scrape_interval: 15s # de quanto em quanto tempo ele busca as métricas de cada alvo
   evaluation_interval: 15s # de quanto em quanto tempo avalia as regras de alerta
@@ -8,6 +9,14 @@ global:
 # Passo 27.9: regras de alerta. O arquivo vem do mesmo ConfigMap e fica na mesma pasta deste.
 rule_files:
   - /etc/prometheus/alertas.yml
+
+# Passo 27.10.2: para onde mandar os alertas disparados (firing). O Prometheus só ENTREGA; agrupar, silenciar e
+# notificar é com o Alertmanager. "alertmanager" é o nome do Service (mesmo namespace, então o nome curto basta).
+# Ele reenvia os alertas ativos a cada avaliação; se o Alertmanager parar de recebê-los, considera-os resolvidos.
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
 
 scrape_configs:
   # Cada "job" é um grupo de alvos. Este tem um alvo fixo (static_configs): o próprio Prometheus,
