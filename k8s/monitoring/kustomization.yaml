@@ -11,6 +11,8 @@ resources:
   - prometheus/prometheus.yaml
   - grafana/grafana.yaml
   - alertmanager/alertmanager.yaml # Passo 27.10.1
+  - kube-state-metrics/kube-state-metrics-rbac.yaml # Passo 31.1
+  - kube-state-metrics/kube-state-metrics.yaml
 
 configMapGenerator:
   - name: alertmanager-config # Passo 27.10.1

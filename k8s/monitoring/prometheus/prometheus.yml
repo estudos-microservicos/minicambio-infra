@@ -2,6 +2,7 @@
 # Passo 27.3: + CPU e memória de cada container, lidas do kubelet de cada nó.
 # Passo 27.6: + o /metrics de cada Pod anotado com prometheus.io/scrape (as 3 APIs, nos dois ambientes).
 # Passo 27.10.2: + o endereço do Alertmanager (bloco "alerting").
+# Passo 31.2: + o kube-state-metrics.
 global:
   scrape_interval: 15s # de quanto em quanto tempo ele busca as métricas de cada alvo
   evaluation_interval: 15s # de quanto em quanto tempo avalia as regras de alerta
@@ -24,6 +25,18 @@ scrape_configs:
   - job_name: prometheus
     static_configs:
       - targets: ["localhost:9090"]
+
+  # Passo 31.2: o kube-state-metrics (estado dos objetos: réplicas, cotas, Pods, HPAs, Jobs).
+  # - Alvo fixo pelo Service, e NÃO pelas anotações prometheus.io/scrape do job "kubernetes-pods": aquele job grava
+  #   as etiquetas namespace/pod do Pod COLETADO, que aqui seria o próprio kube-state-metrics. Elas pisariam nas
+  #   etiquetas namespace/pod/deployment de cada objeto descrito (namespace="monitoring" em tudo).
+  # - honor_labels: se uma etiqueta da métrica tiver o mesmo nome de uma que o Prometheus acrescenta (job, instance),
+  #   vale a da métrica. É o padrão para "exportadores" que falam de outros objetos, não de si mesmos.
+  # - Um alvo só basta: diferente das APIs, ele não conta nada por Pod; descreve o cluster inteiro.
+  - job_name: kube-state-metrics
+    honor_labels: true
+    static_configs:
+      - targets: ["kube-state-metrics:8080"]
 
   # Passo 27.3: o cAdvisor, embutido no kubelet de cada nó, mede CPU, memória, rede e disco de cada container.
   # - kubernetes_sd_configs com role "node": em vez de um alvo fixo, o Prometheus pergunta à API do Kubernetes

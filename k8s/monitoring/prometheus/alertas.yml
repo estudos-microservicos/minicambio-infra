@@ -4,6 +4,7 @@
 # - devolve linhas, mas há menos tempo que o "for" → pendente (pending), para não alarmar por um soluço;
 # - devolve linhas há mais tempo que o "for"       → disparado (firing). Uma linha = um alerta (por namespace/app).
 # Por enquanto o alerta só aparece na tela (Alerts). Mandar e-mail, Slack etc. é papel do Alertmanager (27.10).
+# Passo 31.3: + grupo "minicambio-objetos" (réplicas e cotas, pelo kube-state-metrics).
 groups:
   - name: minicambio-apis
     rules:
@@ -46,3 +47,38 @@ groups:
         annotations:
           summary: "{{ $labels.app }} ({{ $labels.namespace }}) lenta: p95 de {{ $value | humanizeDuration }}"
           description: "O percentil 95 da duração das requisições passou de 1 s há mais de 5 minutos."
+
+  # Passo 31.3: regras sobre o ESTADO dos objetos, lido do kube-state-metrics (Passo 31.1). Diferente das de cima,
+  # não dependem de o Pod existir: o Deployment e a ResourceQuota continuam lá mesmo sem Pod nenhum.
+  - name: minicambio-objetos
+    rules:
+      # Fecha a lacuna do AlvoForaDoAr: Deployment com 0 Pods prontos (0 réplicas, Pods em CrashLoop, readiness
+      # falhando, Pods Pending por falta de cota ou de CPU...). Só as 3 APIs e o web, nos dois ambientes.
+      # O "app" vem do nome do Deployment, para o Alertmanager agrupar igual às regras de cima (group_by ... app).
+      - alert: ApiSemPodsProntos
+        expr: |
+          kube_deployment_status_replicas_available{namespace=~"minicambio|minicambio-dev", deployment=~".+-api|web"} == 0
+        for: 1m
+        labels:
+          severity: critica
+          app: "{{ $labels.deployment }}"
+        annotations:
+          summary: "{{ $labels.deployment }} ({{ $labels.namespace }}) sem nenhum Pod pronto"
+          description: "O Deployment está com 0 Pods disponíveis há mais de 1 minuto: ninguém atende essa API."
+
+      # Algum item de uma ResourceQuota (Passos 28 e 29) passou de 80% do teto. Acima do teto, Pods novos são
+      # recusados (FailedCreate) e o HPA ou o rollout param sem barulho: o aviso vem antes.
+      # used / hard: as duas séries só diferem na etiqueta "type"; o "ignoring(type)" casa uma com a outra pelo
+      # resto (namespace, resourcequota, resource). Uma linha por item: pods, requests.cpu, limits.memory...
+      - alert: CotaPertoDoTeto
+        expr: |
+          kube_resourcequota{type="used"}
+            / ignoring(type)
+          kube_resourcequota{type="hard"}
+            > 0.8
+        for: 2m
+        labels:
+          severity: aviso
+        annotations:
+          summary: "Cota {{ $labels.resourcequota }} ({{ $labels.namespace }}): {{ $labels.resource }} em {{ $value | humanizePercentage }}"
+          description: "Este item da ResourceQuota passou de 80% do teto há mais de 2 minutos. No teto, Pods novos são recusados."
