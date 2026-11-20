@@ -34,6 +34,19 @@ secretGenerator:
       - secrets/rates-cache.env
 
 patches:
+  # Passo 30.3: todos os Deployments do DEV usam a PriorityClass minicambio-dev (-100, nunca remove ninguém).
+  # Mesmo patch do overlays/prod, só muda a classe (ver lá).
+  - target:
+      kind: Deployment
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: qualquer
+      spec:
+        template:
+          spec:
+            priorityClassName: minicambio-dev
   # "$patch: delete" é um patch que, em vez de mudar campos, remove o recurso inteiro do resultado.
   # O "target" escolhe a quem ele se aplica: todos os HPAs, qualquer que seja o nome.
   - target:

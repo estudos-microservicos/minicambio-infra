@@ -49,3 +49,21 @@ secretGenerator:
   - name: rates-cache
     envs:
       - secrets/rates-cache.env
+
+patches:
+  # Passo 30.3: todos os Deployments do PROD usam a PriorityClass minicambio-prod (k8s/priorityclasses.yaml).
+  # - Patch comum (mescla) com "target": vale para todo Deployment, qualquer que seja o nome; o name abaixo é
+  #   ignorado, como nos "$patch: delete" do DEV.
+  # - Muda o template: cada Deployment faz um rollout (os bancos e o Kafka, com Recreate, ficam segundos fora).
+  # - Os Jobs (migrations, kafka-topics) ficam sem classe: o template do Job é imutável (exigiria delete job).
+  - target:
+      kind: Deployment
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: qualquer
+      spec:
+        template:
+          spec:
+            priorityClassName: minicambio-prod

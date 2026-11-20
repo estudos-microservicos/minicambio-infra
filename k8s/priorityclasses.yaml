@@ -1,0 +1,33 @@
+# Passo 30.2: PriorityClasses do MiniCâmbio, uma por ambiente.
+# - PriorityClass é do CLUSTER (sem namespace), como o ClusterRole do Prometheus. Por isso fica fora da base e dos
+#   overlays, ao lado do skooner.yaml: se cada overlay trouxesse as duas, um "kubectl delete -k k8s/overlays/dev"
+#   apagaria também a classe que o PROD usa. Aplicar uma vez, antes dos overlays:
+#     kubectl apply -f k8s/priorityclasses.yaml
+# - value: quanto maior, mais prioridade. Pod sem classe vale 0. Até 1 bilhão para classes nossas; acima disso
+#   são as do sistema (system-cluster-critical, system-node-critical).
+# - Dois efeitos: (1) na fila do scheduler, o Pod Pending de maior valor é agendado antes; (2) preempção: se o
+#   Pod não cabe em nenhum nó, o scheduler remove Pods de valor MENOR para abrir espaço (eles voltam a Pending e o
+#   Deployment deles espera lugar).
+# - Só vale para Pods criados depois: a prioridade é copiada para o Pod na criação (spec.priority).
+# - Equivalente no compose: não há.
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: minicambio-prod
+value: 1000
+globalDefault: false # true faria desta a classe de todo Pod sem priorityClassName (só uma pode ser o padrão)
+preemptionPolicy: PreemptLowerPriority # o padrão: pode remover Pods de valor menor
+description: "PROD do MiniCâmbio: passa na frente e pode remover Pods de prioridade menor (o DEV) quando falta espaço."
+---
+# Valor NEGATIVO de propósito: o scheduler remove primeiro os Pods de menor prioridade. Com o DEV acima de 0, o
+# PROD removeria antes o controlador do Ingress, o monitoring e o Skooner (todos sem classe = 0). Com -100, o DEV
+# é sempre o primeiro a sair, e o que não tem classe fica entre o DEV e o PROD.
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: minicambio-dev
+value: -100
+globalDefault: false
+# Never: o Pod do DEV nunca remove ninguém para entrar; sem espaço, fica Pending esperando, como antes.
+preemptionPolicy: Never
+description: "DEV do MiniCâmbio: cede lugar ao PROD e nunca remove outros Pods para entrar."
