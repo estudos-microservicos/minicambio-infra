@@ -1,15 +1,20 @@
-# Passo 28.4: LimitRange do DEV, valores padrão de requests/limits para cada container que não declarar os seus.
+# Passo 28.4: LimitRange, valores padrão de requests/limits para cada container que não declarar os seus.
 # Passo 28.5: mais um teto ("max") por container.
+# Passo 29.1: saiu do overlay do DEV para a base, porque vale igual nos dois ambientes (a cota, que muda por
+#   ambiente, fica nos overlays). Nome trocado de "minicambio-dev" para "limites-container": o apply não apaga o
+#   LimitRange com o nome antigo no DEV, que foi removido à mão.
 # - Atua quando o Pod é criado, antes da ResourceQuota: preenche o "resources" que faltar e só então a cota
 #   faz a conta. Assim um "kubectl run" sem "resources" deixa de ser recusado (Passo 28.3).
 # - Não mexe em Pods que já existem, nem em containers que já declaram os valores (todos os nossos manifests).
 #   Se um container declarar só o limit, o request padrão passa a ser igual a esse limit, não o defaultRequest.
+# - No PROD, os padrões também protegem o HPA: sem "requests", a "Utilization" do HPA não tem base para o cálculo.
+#   O teto vale por container, então não limita quantos Pods o HPA cria.
 # - ResourceQuota x LimitRange: a cota limita a SOMA do namespace; o LimitRange vale para CADA container.
 # - Equivalente no compose: não há. Serviço sem "deploy.resources" no compose simplesmente roda sem limite.
 apiVersion: v1
 kind: LimitRange
 metadata:
-  name: minicambio-dev
+  name: limites-container
 spec:
   limits:
     - type: Container

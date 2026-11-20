@@ -9,6 +9,7 @@ kind: Kustomization
 
 resources:
   - 00-namespace.yaml
+  - limitrange.yaml # Passo 29.1: igual nos dois ambientes (a ResourceQuota, que muda, fica nos overlays)
   - rates/rates-db.yaml
   - rates/rates-cache.yaml
   - rates/rates-migrations.yaml

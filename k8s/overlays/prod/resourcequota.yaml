@@ -1,0 +1,27 @@
+# Passo 29.2: ResourceQuota do PROD. O mesmo recurso do DEV (Passo 28.1), mas calculado de outro jeito.
+# - No DEV a cota parte do uso de hoje. No PROD ela parte do PIOR CASO PLANEJADO; caso contrário, barra o HPA
+#   justamente no pico, e de forma silenciosa (só um FailedCreate no ReplicaSet, como no Passo 28.2).
+# - Quem decide a escala continua sendo o maxReplicas de cada HPA. A cota fica acima, como rede de segurança contra
+#   descontrole (HPA mal configurado, Job em laço, "replicas: 50" por engano).
+# - Pior caso (2026-11-20), somando os requests:
+#     fixos: Kafka, 3 bancos e Redis ...................... 600m / 1344Mi
+#     HPAs no máximo: Rates 5, Orders 3, Payments 3, Web 3 . 1250m / 1504Mi
+#     Pods extras de rollout (maxSurge 25%: 2 no Rates, 1 nos outros 4) .. 500m / 608Mi
+#     Jobs: 3 migrations + kafka-topics ................... 400m / 640Mi
+#     total: 29 Pods, requests 2750m / 4096Mi, limits 13300m / 8192Mi
+#   Folga de ~25% em cima disso. Uso normal: 10 Pods, requests 1050m / 1888Mi.
+# - ATENÇÃO: subir o maxReplicas de um HPA, ou o resources de um container, exige refazer esta conta.
+# - Equivalente no compose: não há (ver o resourcequota.yaml do DEV).
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: minicambio
+spec:
+  hard:
+    pods: "40"
+    requests.cpu: 3500m
+    requests.memory: 5Gi
+    limits.cpu: "16"
+    limits.memory: 10Gi
+    persistentvolumeclaims: "6"
+    requests.storage: 6Gi

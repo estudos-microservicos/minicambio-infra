@@ -10,6 +10,7 @@ namespace: minicambio
 
 resources:
   - ../../base # uma pasta com kustomization.yaml também pode ser um "resource"
+  - resourcequota.yaml # Passo 29.2: cota pelo pior caso dos HPAs (no DEV, pelo uso atual)
 
 # Passo 26.7: configuração própria do PROD por cima da gerada na base.
 # "behavior: merge" junta estes valores aos do orders-api.env da base (o que repete, troca; o que é novo, entra).
