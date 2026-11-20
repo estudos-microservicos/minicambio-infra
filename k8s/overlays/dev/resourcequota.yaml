@@ -1,0 +1,25 @@
+# Passo 28.1: ResourceQuota do DEV, um teto para a SOMA de tudo o que roda no namespace "minicambio-dev".
+# - O "resources" de cada container (requests/limits) limita um container; a cota limita o namespace inteiro.
+# - Quem confere é o API server, na hora de criar o objeto: o Pod que estouraria a cota é recusado (não fica
+#   Pending, nem chega a existir). Pods que já rodam não são afetados, só entram na conta ("Used").
+# - Conta só Pods ativos: os Pods "Completed" dos Jobs (migrations, kafka-topics) não ocupam a cota.
+# - Com requests.*/limits.* na cota, todo Pod novo do namespace PRECISA declarar esses campos, senão é recusado.
+#   O LimitRange (mais adiante neste passo) resolve isso com valores padrão.
+# - Só no DEV: num cluster compartilhado, é o que impede o ambiente de teste de tomar o espaço do PROD.
+# - Equivalente no compose: não há. O mais perto é o "deploy.resources.limits" de cada serviço (por container) e
+#   o teto da VM do Docker Desktop (Settings > Resources), que vale para tudo junto, sem divisão por projeto.
+# - Valores: uso em 2026-11-20 = 9 Pods, requests 950m/1760Mi, limits 4450m/3328Mi, 4 PVCs de 1Gi. A folga cobre
+#   os 3 Jobs de migração e o Pod extra que cada Deployment cria durante um rollout (maxSurge).
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: minicambio-dev
+spec:
+  hard:
+    pods: "15"
+    requests.cpu: 1500m
+    requests.memory: 3Gi
+    limits.cpu: "8"
+    limits.memory: 5Gi
+    persistentvolumeclaims: "5"
+    requests.storage: 5Gi # soma do tamanho pedido pelos PVCs

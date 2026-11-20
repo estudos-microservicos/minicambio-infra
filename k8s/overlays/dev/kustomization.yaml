@@ -15,6 +15,7 @@ namespace: minicambio-dev # troca o namespace de tudo, e o nome do Namespace da 
 
 resources:
   - ../../base
+  - resourcequota.yaml # Passo 28.1: só o DEV tem cota
 
 # Passo 26.9: senhas próprias do DEV, diferentes das do PROD (mesmo mecanismo do overlays/prod; ver lá).
 # Os arquivos secrets/*.env ficam fora do git; modelos: secrets/*.env.example.
