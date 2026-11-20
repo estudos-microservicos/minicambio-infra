@@ -17,6 +17,23 @@ resources:
   - ../../base
   - resourcequota.yaml # Passo 28.1: cota do DEV (o LimitRange foi para a base no Passo 29.1)
 
+# Passo 34.3: a versão de cada imagem NESTE ambiente. A tag é o SHA curto do commit do repo do serviço
+# (git -C ../minicambio-<servico> rev-parse --short HEAD), e a imagem é construída com essa tag.
+# - O Kustomize procura pelo NOME da imagem (sem olhar a tag da base, que continua ":latest") em todo lugar onde
+#   ela aparece: Deployments e também os Jobs de migração, que usam a imagem da API.
+# - Trocar a tag muda o template dos Jobs, que é imutável: apagar os Jobs de migração antes do apply (como no 26.9).
+# - Promover uma versão para o PROD = copiar a tag para o overlays/prod. O git diff mostra o que foi para onde.
+# - Tags SEMPRE entre aspas: sem elas, o YAML leu 011e061 como número (11 x 10^61) e o Kustomize recusou.
+images:
+  - name: minicambio-rates-api
+    newTag: "19b3a6d" # Passo 34.5: log de subida com o ambiente (o PROD segue no 053d175)
+  - name: minicambio-orders-api
+    newTag: "011e061"
+  - name: minicambio-payments-api
+    newTag: "e875923"
+  - name: minicambio-web
+    newTag: "1a32893"
+
 # Passo 26.9: senhas próprias do DEV, diferentes das do PROD (mesmo mecanismo do overlays/prod; ver lá).
 # Os arquivos secrets/*.env ficam fora do git; modelos: secrets/*.env.example.
 secretGenerator:
