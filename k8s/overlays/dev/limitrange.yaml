@@ -1,0 +1,27 @@
+# Passo 28.4: LimitRange do DEV, valores padrão de requests/limits para cada container que não declarar os seus.
+# Passo 28.5: mais um teto ("max") por container.
+# - Atua quando o Pod é criado, antes da ResourceQuota: preenche o "resources" que faltar e só então a cota
+#   faz a conta. Assim um "kubectl run" sem "resources" deixa de ser recusado (Passo 28.3).
+# - Não mexe em Pods que já existem, nem em containers que já declaram os valores (todos os nossos manifests).
+#   Se um container declarar só o limit, o request padrão passa a ser igual a esse limit, não o defaultRequest.
+# - ResourceQuota x LimitRange: a cota limita a SOMA do namespace; o LimitRange vale para CADA container.
+# - Equivalente no compose: não há. Serviço sem "deploy.resources" no compose simplesmente roda sem limite.
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: minicambio-dev
+spec:
+  limits:
+    - type: Container
+      defaultRequest: # vira o "requests" de quem não declarar
+        cpu: 50m
+        memory: 64Mi
+      default: # vira o "limits" de quem não declarar
+        cpu: 200m
+        memory: 128Mi
+      # Passo 28.5: teto por container. Container com limit (ou request) acima disso é recusado na criação do Pod.
+      # O maior dos nossos é o Kafka (1 CPU, 768Mi). Num Deployment, a recusa aparece como FailedCreate no
+      # ReplicaSet, igual à da cota (Passo 28.2).
+      max:
+        cpu: "1"
+        memory: 1Gi
