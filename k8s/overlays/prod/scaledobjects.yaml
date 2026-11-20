@@ -1,0 +1,73 @@
+# Passo 33: autoscaling do Orders e do Payments pelo KEDA, no lugar dos HPAs de CPU do Passo 23.
+# - Por que: os dois são consumidores do Kafka. A CPU não mostra a fila crescendo (um consumidor atrasado pode
+#   estar com a CPU baixa, esperando o banco). O LAG (mensagens gravadas no tópico e ainda não lidas pelo grupo)
+#   mostra exatamente o trabalho acumulado.
+# - Como funciona: o keda-operator lê o LAG direto no broker a cada pollingInterval e cria um HPA
+#   "keda-hpa-<nome>" com essa métrica (tipo External) e com a CPU. Com dois gatilhos, o HPA calcula as réplicas
+#   para cada um e fica com o MAIOR.
+# - A conta do LAG: réplicas = LAG total ÷ lagThreshold, arredondado para cima (LAG 60 ÷ 20 = 3 Pods).
+# - Teto = partições: com allowIdleConsumers "false" (o padrão), o KEDA nunca pede mais Pods que partições (3),
+#   o mesmo motivo do maxReplicas 3 do Passo 23.7.
+# - Só no PROD: o endereço do Kafka traz o namespace (o KEDA roda no namespace keda e precisa do nome completo,
+#   Passo 33.1), e o DEV fica com 1 Pod por componente (Passo 26.3).
+# - Não pode haver outro HPA para o mesmo Deployment: o webhook do KEDA recusa (os HPAs saíram da base).
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: payments-api
+spec:
+  scaleTargetRef:
+    name: payments-api # o Deployment (apps/v1 é o padrão)
+  minReplicaCount: 1 # 0 seria possível com o KEDA ("scale to zero"), mas a API também atende HTTP e roda o worker
+  maxReplicaCount: 3
+  # Sem pollingInterval: com minReplicaCount >= 1, quem pergunta o LAG é o próprio HPA (a cada 15 s, pela API de
+  # métricas externas), e o KEDA consulta o Kafka na hora. O pollingInterval só vale para decidir entre 0 e 1 Pod.
+  advanced:
+    horizontalPodAutoscalerConfig: # o "behavior" do HPA que o KEDA cria (Passo 25)
+      behavior:
+        scaleDown:
+          stabilizationWindowSeconds: 60 # só remove Pod se a carga ficou baixa no último 1 min
+        # scaleUp: sem limite próprio (o padrão: até 4 Pods ou o dobro a cada 15 s). Com fila, subir rápido importa
+        # mais: no Passo 25 era 1 Pod a cada 30 s, o que levaria 1 min para ir de 1 a 3.
+  triggers:
+    - type: kafka
+      metadata:
+        bootstrapServers: kafka.minicambio.svc.cluster.local:9092
+        consumerGroup: payments-api # o grupo cujo atraso é medido
+        topic: minicambio.payment-requests # pedidos de pagamento, publicados pelo Orders
+        lagThreshold: "20" # LAG por Pod que o HPA tenta manter
+        # Partição sem offset salvo pelo grupo (nunca lida): com "latest" (o padrão), o KEDA conta 1, supondo que o
+        # consumidor pularia para o fim. Os nossos consumidores usam AutoOffsetReset.Earliest (leem desde o início),
+        # então o KEDA tem de contar igual: todas as mensagens da partição. Visto no 33.4: 30 mensagens contadas como 1.
+        offsetResetPolicy: earliest
+    - type: cpu # mantém o critério do Passo 23 para a carga HTTP; precisa do requests.cpu no container
+      metricType: Utilization
+      metadata:
+        value: "50"
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: orders-api
+spec:
+  scaleTargetRef:
+    name: orders-api
+  minReplicaCount: 1
+  maxReplicaCount: 3
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleDown:
+          stabilizationWindowSeconds: 60
+  triggers:
+    - type: kafka
+      metadata:
+        bootstrapServers: kafka.minicambio.svc.cluster.local:9092
+        consumerGroup: orders-api
+        topic: minicambio.payment-results # resultados de pagamento, publicados pelo Payments
+        lagThreshold: "20"
+        offsetResetPolicy: earliest # mesma razão do payments-api, acima
+    - type: cpu # o Orders recebe todo o HTTP do site; a CPU continua sendo o critério principal dele
+      metricType: Utilization
+      metadata:
+        value: "50"

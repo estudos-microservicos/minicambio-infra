@@ -1,0 +1,24 @@
+# Passo 33: KEDA (Kubernetes Event-Driven Autoscaling), chart kedacore/keda versão 2.21.0 (testada com o
+# Kubernetes 1.34 a 1.36; a 2.21.1 tinha 5 dias). É do cluster, como o ingress-nginx e o monitoring-stack:
+# um KEDA só, no namespace keda, atende todos os namespaces.
+#
+# Instalar ou atualizar:
+#   helm repo add kedacore https://kedacore.github.io/charts
+#   helm upgrade --install keda kedacore/keda --version 2.21.0 -n keda --create-namespace -f k8s/keda/values.yaml
+#
+# O que o chart instala (3 Deployments):
+# - keda-operator: lê os ScaledObjects, consulta a fonte de cada um (aqui, o LAG no Kafka) e cria/ajusta um HPA
+#   para cada alvo. O HPA continua sendo quem muda o "replicas"; o KEDA só alimenta o HPA com a métrica.
+# - keda-operator-metrics-apiserver: publica essas métricas na API do Kubernetes (external.metrics.k8s.io), de
+#   onde o HPA as lê. É o papel que o metrics-server (Passo 23) faz para CPU e memória (metrics.k8s.io).
+# - keda-admission-webhooks: recusa ScaledObject inválido no apply (por exemplo, um segundo HPA para o mesmo alvo).
+#
+# Equivalente no compose: não há (lá o número de réplicas é fixo).
+
+# Métricas do próprio operador (LAG lido, erros dos scalers, tempo de cada consulta) para o Prometheus do
+# monitoring-stack (Passo 32), que lê ServiceMonitors de qualquer namespace.
+prometheus:
+  operator:
+    enabled: true
+    serviceMonitor:
+      enabled: true

@@ -7,6 +7,8 @@
 # - No compose há também a porta 9094 para o host (dotnet run). Aqui só a 9092, de dentro do cluster.
 # - Ordem de deploy: este arquivo → Job kafka-topics (kafka-topics.yaml) → APIs.
 # Passo 26.8: o ConfigMap saiu deste arquivo; o Kustomize o gera, com hash no nome, a partir do kafka/kafka.env.
+# Passo 33: endereço anunciado com o nome completo (kafka.<namespace>.svc.cluster.local) e o KEDA liberado na
+# NetworkPolicy, para ele medir o LAG dos grupos de consumo e escalar o Orders e o Payments no PROD.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -34,6 +36,17 @@ spec:
           envFrom:
             - configMapRef:
                 name: kafka
+          env:
+            # Passo 33.1: o endereço que o broker devolve aos clientes ("fale comigo em..."). Era "kafka:9092", que só
+            # resolve DENTRO do mesmo namespace. O KEDA (namespace keda) lê o LAG direto no broker e não acharia
+            # "kafka". O nome completo vale de qualquer namespace. O namespace vem do próprio Pod (Downward API:
+            # fieldRef), então a mesma base serve ao PROD e ao DEV. Fica no "env" porque $(VAR) não funciona no envFrom.
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: KAFKA_ADVERTISED_LISTENERS
+              value: PLAINTEXT://kafka.$(POD_NAMESPACE).svc.cluster.local:9092
           ports:
             - containerPort: 9092
           readinessProbe: # tcpSocket: só testa se a porta aceita conexão (o broker só abre a 9092 quando está pronto)
@@ -108,5 +121,11 @@ spec:
         - podSelector: # o Job que cria os tópicos
             matchLabels:
               app: kafka-topics
+        - namespaceSelector: # Passo 33: o KEDA lê os offsets dos grupos de consumo (o LAG) direto no broker
+            matchLabels:
+              kubernetes.io/metadata.name: keda
+          podSelector: # mesmo item: E (só o operador do KEDA, não os outros Pods de lá)
+            matchLabels:
+              app: keda-operator
       ports:
         - port: 9092
