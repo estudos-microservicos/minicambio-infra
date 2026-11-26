@@ -22,7 +22,7 @@ resources:
 # a tag já testada no DEV. Tags entre aspas; trocar a tag exige apagar os Jobs de migração antes do apply.
 images:
   - name: minicambio-rates-api
-    newTag: "053d175"
+    newTag: "19b3a6d" # Passo 35.6.3: promovida do DEV (log de subida com o ambiente, Passo 34.5)
   - name: minicambio-orders-api
     newTag: "011e061"
   - name: minicambio-payments-api
