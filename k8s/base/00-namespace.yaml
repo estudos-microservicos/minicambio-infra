@@ -12,6 +12,8 @@
 # Passo 26: tudo isto virou a base do Kustomize (k8s/base/). Aplica-se por ambiente, com
 # "kubectl apply -k k8s/overlays/<ambiente>", e o Kustomize já põe o Namespace em primeiro sozinho. O
 # "minicambio" daqui é só o valor inicial: cada overlay troca o nome pelo campo "namespace:".
+# Passo 35: quem aplica os overlays é o Argo CD (commit + push no main), e o Namespace é um dos objetos dele.
+# Cuidado redobrado: com o prune ligado, tirar este arquivo do Git faz o Argo APAGAR o namespace, e com ele tudo.
 apiVersion: v1
 kind: Namespace
 metadata:

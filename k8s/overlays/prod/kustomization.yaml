@@ -1,6 +1,8 @@
 # Passo 26.2: ambiente PROD (de estudo). É o ambiente que já rodava no namespace "minicambio".
-# Por enquanto não muda nada em relação à base: o resultado tem de sair "unchanged" no cluster atual.
-# Aplicar: kubectl apply -k k8s/overlays/prod
+# Começou igual à base; depois ganhou o que só o PROD tem (KEDA, cota, Production nas APIs, prioridade, senhas).
+# Aplicar (Passo 35, GitOps): commit + push no main. O Argo CD (Application k8s/argocd/minicambio-prod.yaml) aplica
+#   sozinho em até ~3 min (REFRESH na tela antecipa). Não usar "kubectl apply -k" nem mudar o cluster à mão: o
+#   selfHeal desfaz. Rollback = git revert. Conferir antes do push: kubectl kustomize k8s/overlays/prod
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
@@ -19,7 +21,8 @@ resources:
   - secrets/rates-cache.sealed.yaml
 
 # Passo 34.4: a versão de cada imagem no PROD (mesmo mecanismo do overlays/dev; ver lá). Promover = copiar para cá
-# a tag já testada no DEV. Tags entre aspas; trocar a tag exige apagar os Jobs de migração antes do apply.
+# a tag já testada no DEV (commit; Passo 35.6.3). Tags entre aspas. Os Jobs de migração são hooks do Argo CD
+# (Passo 35.4): recriados a cada sync com a imagem nova, antes do rollout da API.
 images:
   - name: minicambio-rates-api
     newTag: "19b3a6d" # Passo 35.6.3: promovida do DEV (log de subida com o ambiente, Passo 34.5)
@@ -55,7 +58,7 @@ configMapGenerator:
 # - Os secrets/*.env seguem fora do git, agora só como entrada do kubeseal (modelos: secrets/*.env.example).
 #   Selar: kubectl create secret generic <nome> -n minicambio --from-env-file=k8s/overlays/prod/secrets/<nome>.env `
 #     --dry-run=client -o yaml | kubeseal --format yaml -w k8s/overlays/prod/secrets/<nome>.sealed.yaml
-# - Nome fixo (sem hash): trocar a senha exige "kubectl rollout restart" depois do apply.
+# - Nome fixo (sem hash): trocar a senha exige "kubectl rollout restart" depois do sync do Argo (ver o DEV).
 # - Cuidado: o Postgres só lê a senha ao criar o banco. Trocar aqui não troca a senha de um banco existente
 #   (exigiria ALTER USER); o Redis lê a cada subida, então nele basta trocar (e reiniciar).
 
@@ -65,6 +68,7 @@ patches:
   #   ignorado, como nos "$patch: delete" do DEV.
   # - Muda o template: cada Deployment faz um rollout (os bancos e o Kafka, com Recreate, ficam segundos fora).
   # - Os Jobs (migrations, kafka-topics) ficam sem classe: o template do Job é imutável (exigiria delete job).
+  #   Desde o Passo 35.4 os de migração são hooks recriados a cada sync, então daria para incluí-los; não foi feito.
   - target:
       kind: Deployment
     patch: |-

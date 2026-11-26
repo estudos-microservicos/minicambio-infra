@@ -29,7 +29,8 @@ resources:
 # - O nome ganha um sufixo com o hash do conteúdo (orders-api-<hash>), e o Kustomize troca esse nome em quem
 #   referencia o ConfigMap (o envFrom do Deployment). Mudou um valor, muda o hash, muda o Deployment, e o
 #   rollout acontece sozinho: resolve o "configmap configured / deployment unchanged" do Passo 20.
-# - O ConfigMap antigo (com o hash anterior) não é apagado pelo apply: fica sobrando no cluster.
+# - O ConfigMap antigo (com o hash anterior) não é apagado pelo apply: fica sobrando no cluster. Desde o Passo 35
+#   (Argo CD com prune) ele é apagado no sync, porque saiu do Git e tem a etiqueta de dono do Argo.
 # - Passo 26.8: todos os ConfigMaps passaram a ser gerados. Os dos bancos e o do Kafka também: mudar um valor
 #   recria o Pod do banco (strategy Recreate, alguns segundos fora), e os dados ficam no PVC.
 configMapGenerator:

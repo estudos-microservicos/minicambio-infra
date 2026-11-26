@@ -7,7 +7,9 @@
 # - Passo 26.4: endereços próprios no Ingress (o ingress-nginx recusa dois Ingress com o mesmo host, mesmo em
 #   namespaces diferentes): dev.localhost (site), orders/rates/payments.dev.localhost (APIs). O PowerShell 5.1
 #   precisa deles no arquivo hosts do Windows (o navegador e o curl.exe resolvem *.localhost sozinhos).
-# Aplicar: kubectl apply -k k8s/overlays/dev
+# Aplicar (Passo 35, GitOps): commit + push no main. O Argo CD (Application k8s/argocd/minicambio-dev.yaml) aplica
+#   sozinho em até ~3 min (REFRESH na tela antecipa). Não usar "kubectl apply -k" nem mudar o cluster à mão: o
+#   selfHeal desfaz. Rollback = git revert. Conferir antes do push: kubectl kustomize k8s/overlays/dev
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
@@ -26,12 +28,14 @@ resources:
 # (git -C ../minicambio-<servico> rev-parse --short HEAD), e a imagem é construída com essa tag.
 # - O Kustomize procura pelo NOME da imagem (sem olhar a tag da base, que continua ":latest") em todo lugar onde
 #   ela aparece: Deployments e também os Jobs de migração, que usam a imagem da API.
-# - Trocar a tag muda o template dos Jobs, que é imutável: apagar os Jobs de migração antes do apply (como no 26.9).
-# - Promover uma versão para o PROD = copiar a tag para o overlays/prod. O git diff mostra o que foi para onde.
+# - Trocar a tag muda o template dos Jobs, que é imutável. Desde o Passo 35.4 os Jobs de migração são hooks do
+#   Argo CD (BeforeHookCreation): ele os apaga e recria a cada sync, então não há mais "kubectl delete job".
+# - Promover uma versão para o PROD = copiar a tag para o overlays/prod (commit). O git log mostra o que foi para
+#   onde e quando (Passo 35.6.3).
 # - Tags SEMPRE entre aspas: sem elas, o YAML leu 011e061 como número (11 x 10^61) e o Kustomize recusou.
 images:
   - name: minicambio-rates-api
-    newTag: "19b3a6d" # Passo 34.5: log de subida com o ambiente (o PROD segue no 053d175)
+    newTag: "19b3a6d" # Passo 34.5: log de subida com o ambiente (promovida ao PROD no Passo 35.6.3)
   - name: minicambio-orders-api
     newTag: "011e061"
   - name: minicambio-payments-api
@@ -44,7 +48,8 @@ images:
 #   criptografada com a chave pública do controlador (kube-system); só ele, com a chave privada, cria o Secret.
 # - Selado para nome + namespace: o arquivo do DEV não abre no PROD, e vice-versa.
 # - Os Secrets passam a ter nome fixo (rates-db, sem hash). Trocar a senha não muda mais o template dos Pods:
-#   depois de selar de novo e aplicar, é preciso "kubectl rollout restart" (os Pods só leem o Secret ao subir).
+#   depois de selar de novo e o sync do Argo criar o Secret novo, é preciso "kubectl rollout restart" (os Pods só
+#   leem o Secret ao subir). O selfHeal não desfaz o restart: a anotação que ele põe no template não está no Git.
 # - Os secrets/*.env seguem fora do git, agora só como entrada do kubeseal (modelos: secrets/*.env.example).
 #   Selar (a senha aberta não vai ao disco; -w grava o arquivo sem passar pelo ">" do PowerShell):
 #   kubectl create secret generic <nome> -n minicambio-dev --from-env-file=k8s/overlays/dev/secrets/<nome>.env `
