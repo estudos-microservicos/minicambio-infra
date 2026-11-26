@@ -1,0 +1,43 @@
+# Passo 35 (opcional): a tela do Argo CD em http://argocd.localhost, pelo Ingress, sem port-forward.
+# - O Argo CD foi instalado pelo manifest oficial (fora do repo, Passo 35.1). Este arquivo só ajusta duas coisas.
+# - Sem este Ingress, argocd.localhost caía na regra SEM host do Ingress do PROD (o "pega tudo" → web).
+# - Fora do Argo CD: aplicado à mão, como as Applications. Aplicar:
+#     kubectl apply -f k8s/argocd/argocd-server.yaml
+#     kubectl rollout restart deployment argocd-server -n argocd   (o server só lê o ConfigMap ao subir)
+# - Efeito colateral: o port-forward continua funcionando, mas em http://localhost:8080 (não mais https).
+
+# 1) O argocd-server serve HTTPS sozinho (certificado autoassinado). Atrás do ingress-nginx, que fala HTTP com o
+#    Service, ele responderia com redirecionamento para https e a página entraria em laço. Com server.insecure, ele
+#    serve HTTP simples e quem fala com o navegador é o ingress-nginx, como no Grafana. Só para cluster local: em
+#    produção, HTTPS no Ingress (ou ssl-passthrough).
+# - O ConfigMap já existe (veio vazio na instalação); o apply só acrescenta a chave.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-cmd-params-cm
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: argocd-cmd-params-cm
+    app.kubernetes.io/part-of: argocd
+data:
+  server.insecure: "true"
+---
+# 2) O Ingress, igual ao do Skooner (k8s/skooner.yaml): fica no namespace do Service que ele usa.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: argocd-server
+  namespace: argocd
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: argocd.localhost # o navegador resolve *.localhost sozinho (o PowerShell 5.1 não; ver Passo 18)
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: argocd-server
+                port:
+                  number: 80 # a porta "http" do Service (as duas, 80 e 443, vão para a 8080 do container)
