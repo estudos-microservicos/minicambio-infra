@@ -1,0 +1,23 @@
+# Passo 35.3: a Application do DEV no Argo CD (GitOps).
+# - Uma Application diz ao Argo CD: "este repositório, nesta pasta, aplicado neste cluster e namespace".
+#   O Argo baixa o repo, roda o mesmo "kustomize build" do "kubectl apply -k k8s/overlays/dev", compara com o
+#   cluster e mostra a diferença (Synced / OutOfSync). Equivalente no compose: nenhum.
+# - Fica no namespace "argocd" (onde o Argo procura Applications), não no "minicambio-dev" (que é o destino).
+# - O Argo lê o GitHub, não o seu disco: uma mudança só vale depois do push para o main.
+# - Passo 35.3: sem "syncPolicy", o sync é MANUAL (o Argo só avisa OutOfSync; aplicar = botão SYNC).
+# - Este arquivo é aplicado à mão (kubectl apply -f), uma vez: o Argo ainda não se gerencia sozinho.
+# Aplicar: kubectl apply -f k8s/argocd/minicambio-dev.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: minicambio-dev
+  namespace: argocd
+spec:
+  project: default # AppProject padrão: qualquer repo, qualquer destino (em produção, um projeto que limite isso)
+  source:
+    repoURL: https://github.com/estudos-microservicos/minicambio-infra.git # público: sem credencial
+    targetRevision: main # o ramo que o Argo acompanha (pode ser uma tag ou um commit)
+    path: k8s/overlays/dev # a pasta tem kustomization.yaml: o Argo usa o Kustomize sozinho
+  destination:
+    server: https://kubernetes.default.svc # o "in-cluster": o próprio cluster onde o Argo roda
+    namespace: minicambio-dev # o overlay já põe o namespace em tudo; este é o padrão para o que vier sem

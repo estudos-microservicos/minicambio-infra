@@ -6,11 +6,24 @@
 # - Label própria (app: rates-migrations): com app: rates-api, o Service da API mandaria requisições para este Pod.
 #   Por isso a NetworkPolicy do rates-db libera também esta label.
 # - Passo 16.4: o Deployment do rates-api deixou de migrar; o Job passou a ser o único a aplicar migrations.
+# - Passo 35.4: no Argo CD, o Job é um "hook" (anotações abaixo; o kubectl ignora as anotações do Argo):
+#   - hook: Sync → o Argo cria o Job de novo a CADA sync (as migrations são idempotentes: sem pendência, nada muda).
+#   - hook-delete-policy: BeforeHookCreation → apaga o Job anterior logo antes de criar o novo. Resolve o template
+#     imutável (fim do "kubectl delete job" antes do apply) e deixa o último Job no cluster para ver os logs.
+#   - sync-wave: "1" → ordem dentro do sync: onda 0 (padrão: banco, Secret, ConfigMap, Service...) e espera ficar
+#     saudável; onda 1 (este Job) e espera terminar; onda 2 (o Deployment da API). Se o Job falhar, o sync para e a
+#     API continua na versão antiga. É o "Job → kubectl wait → API" do Passo 16, feito pelo Argo.
+#   - Por que não PreSync: a fase PreSync roda antes de tudo; num namespace novo o banco e o Secret ainda não
+#     existiriam e o Job falharia.
 apiVersion: batch/v1
 kind: Job
 metadata:
   name: rates-migrations
   namespace: minicambio
+  annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    argocd.argoproj.io/sync-wave: "1"
 spec:
   backoffLimit: 4 # até 4 novas tentativas (um Pod novo por falha) antes de marcar o Job como Failed
   template:

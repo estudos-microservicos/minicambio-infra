@@ -31,6 +31,8 @@ kind: Deployment
 metadata:
   name: payments-api
   namespace: minicambio
+  annotations:
+    argocd.argoproj.io/sync-wave: "2" # Passo 35.4: depois do Job de migração (onda 1); ver o rates-api.yaml
 spec:
   # sem "replicas": quem decide é o HPA (fim do arquivo). O worker roda em cada Pod que existir e o SKIP LOCKED
   # continua dividindo os registros entre eles, sejam 1 ou 3

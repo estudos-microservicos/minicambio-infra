@@ -2,11 +2,16 @@
 # - Usa a imagem da API com --migrate-only: aplica as migrations e encerra, sem subir o HTTP nem o worker.
 # - Label própria (app: orders-migrations), liberada na NetworkPolicy do orders-db.
 # - O Deployment do orders-api não migra mais (Database__ApplyMigrationsOnStartup=false).
+# - Passo 35.4: hook do Argo CD na onda 1, entre o banco (onda 0) e a API (onda 2); ver o rates-migrations.yaml.
 apiVersion: batch/v1
 kind: Job
 metadata:
   name: orders-migrations
   namespace: minicambio
+  annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    argocd.argoproj.io/sync-wave: "1"
 spec:
   backoffLimit: 4 # até 4 novas tentativas (um Pod novo por falha) antes de marcar o Job como Failed
   template:

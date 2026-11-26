@@ -29,6 +29,10 @@ kind: Deployment
 metadata:
   name: rates-api
   namespace: minicambio
+  annotations:
+    # Passo 35.4: no Argo CD, a API vem na onda 2, depois do Job de migração (onda 1). Fica no metadata do
+    # Deployment, não no template: acrescentar não reinicia os Pods.
+    argocd.argoproj.io/sync-wave: "2"
 spec:
   # sem "replicas": quem decide quantos Pods rodam é o HPA (fim do arquivo); com o campo aqui, cada
   # "kubectl apply" voltaria a quantidade para o valor fixo e brigaria com o HPA
