@@ -1,0 +1,27 @@
+# Passo 35.6: a Application do PROD no Argo CD. Mesmo formato da minicambio-dev.yaml (ver os comentários de lá).
+# - Diferenças: pasta k8s/overlays/prod e namespace "minicambio".
+# - Passo 35.6.1: começou SEM "syncPolicy" (sync manual), para conferir o diff antes de o Argo agir: o PROD tem o
+#   que o DEV não tem (KEDA com HPAs criados por ele, HPA e PDB do Rates, cota pelo pior caso). O diff mostrou só
+#   a etiqueta de dono (tracking-id); os HPAs keda-hpa-* têm dono (o ScaledObject), então o Argo não os toca.
+# - Passo 35.6.2: 1º sync sem rollout e smoke test verde → sync automático ligado, como no DEV.
+# - Antes do 1º sync, apagar os 3 Jobs de migração (kubectl delete job ... -n minicambio): adotados como objetos
+#   normais, virariam "requires pruning" e bloqueariam os hooks de mesmo nome (o tropeço do 35.4 no DEV).
+# Aplicar: kubectl apply -f k8s/argocd/minicambio-prod.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: minicambio-prod
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/estudos-microservicos/minicambio-infra.git
+    targetRevision: main
+    path: k8s/overlays/prod
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: minicambio
+  syncPolicy:
+    automated:
+      selfHeal: true # réplicas das APIs ficam livres para o HPA e o KEDA: não estão no Git
+      prune: true
