@@ -31,7 +31,7 @@ resources:
 # - Tags SEMPRE entre aspas: sem elas, o YAML leu 011e061 como número (11 x 10^61) e o Kustomize recusou.
 images:
   - name: minicambio-rates-api
-    newTag: "053d175" # Passo 35.5.3: volta à versão do PROD só por commit (o Argo CD aplica); será revertido
+    newTag: "19b3a6d" # Passo 34.5: log de subida com o ambiente (o PROD segue no 053d175)
   - name: minicambio-orders-api
     newTag: "011e061"
   - name: minicambio-payments-api
