@@ -16,6 +16,11 @@ namespace: minicambio-dev # troca o namespace de tudo, e o nome do Namespace da 
 resources:
   - ../../base
   - resourcequota.yaml # Passo 28.1: cota do DEV (o LimitRange foi para a base no Passo 29.1)
+  # Passo 35.2.4: as senhas do DEV, seladas pelo kubeseal (no lugar do secretGenerator do Passo 26.9; ver abaixo).
+  - secrets/rates-db.sealed.yaml
+  - secrets/payments-db.sealed.yaml
+  - secrets/orders-db.sealed.yaml
+  - secrets/rates-cache.sealed.yaml
 
 # Passo 34.3: a versão de cada imagem NESTE ambiente. A tag é o SHA curto do commit do repo do serviço
 # (git -C ../minicambio-<servico> rev-parse --short HEAD), e a imagem é construída com essa tag.
@@ -34,21 +39,16 @@ images:
   - name: minicambio-web
     newTag: "1a32893"
 
-# Passo 26.9: senhas próprias do DEV, diferentes das do PROD (mesmo mecanismo do overlays/prod; ver lá).
-# Os arquivos secrets/*.env ficam fora do git; modelos: secrets/*.env.example.
-secretGenerator:
-  - name: rates-db
-    envs:
-      - secrets/rates-db.env
-  - name: payments-db
-    envs:
-      - secrets/payments-db.env
-  - name: orders-db
-    envs:
-      - secrets/orders-db.env
-  - name: rates-cache
-    envs:
-      - secrets/rates-cache.env
+# Passo 35.2.4: senhas do DEV (diferentes das do PROD) por Sealed Secrets, em vez do secretGenerator do Passo 26.9.
+# - Motivo: o Argo CD só enxerga o Git, e os secrets/*.env ficam fora dele (repo público). O SealedSecret é a senha
+#   criptografada com a chave pública do controlador (kube-system); só ele, com a chave privada, cria o Secret.
+# - Selado para nome + namespace: o arquivo do DEV não abre no PROD, e vice-versa.
+# - Os Secrets passam a ter nome fixo (rates-db, sem hash). Trocar a senha não muda mais o template dos Pods:
+#   depois de selar de novo e aplicar, é preciso "kubectl rollout restart" (os Pods só leem o Secret ao subir).
+# - Os secrets/*.env seguem fora do git, agora só como entrada do kubeseal (modelos: secrets/*.env.example).
+#   Selar (a senha aberta não vai ao disco; -w grava o arquivo sem passar pelo ">" do PowerShell):
+#   kubectl create secret generic <nome> -n minicambio-dev --from-env-file=k8s/overlays/dev/secrets/<nome>.env `
+#     --dry-run=client -o yaml | kubeseal --format yaml -w k8s/overlays/dev/secrets/<nome>.sealed.yaml
 
 patches:
   # Passo 30.3: todos os Deployments do DEV usam a PriorityClass minicambio-dev (-100, nunca remove ninguém).

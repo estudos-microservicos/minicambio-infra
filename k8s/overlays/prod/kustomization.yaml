@@ -12,6 +12,11 @@ resources:
   - ../../base # uma pasta com kustomization.yaml também pode ser um "resource"
   - resourcequota.yaml # Passo 29.2: cota pelo pior caso dos HPAs (no DEV, pelo uso atual)
   - scaledobjects.yaml # Passo 33: Orders e Payments escalados pelo KEDA (LAG do Kafka + CPU)
+  # Passo 35.2.5: as senhas do PROD, seladas pelo kubeseal (no lugar do secretGenerator do Passo 26.9; ver abaixo).
+  - secrets/rates-db.sealed.yaml
+  - secrets/payments-db.sealed.yaml
+  - secrets/orders-db.sealed.yaml
+  - secrets/rates-cache.sealed.yaml
 
 # Passo 34.4: a versão de cada imagem no PROD (mesmo mecanismo do overlays/dev; ver lá). Promover = copiar para cá
 # a tag já testada no DEV. Tags entre aspas; trocar a tag exige apagar os Jobs de migração antes do apply.
@@ -44,24 +49,15 @@ configMapGenerator:
     literals:
       - ASPNETCORE_ENVIRONMENT=Production
 
-# Passo 26.9: as senhas do PROD (as mesmas de antes, que já estão gravadas no disco dos bancos).
-# - secretGenerator é o irmão do configMapGenerator: nome com hash e troca do nome em todo secretKeyRef
-#   (Deployments e Jobs de migração). Os arquivos secrets/*.env ficam fora do git; modelos: secrets/*.env.example.
+# Passo 35.2.5: as senhas do PROD (as mesmas de antes, que já estão gravadas no disco dos bancos), por Sealed
+# Secrets, em vez do secretGenerator do Passo 26.9. Mesmo mecanismo do overlays/dev (ver lá): selado para
+# nome + namespace, então o arquivo do PROD só abre no namespace "minicambio".
+# - Os secrets/*.env seguem fora do git, agora só como entrada do kubeseal (modelos: secrets/*.env.example).
+#   Selar: kubectl create secret generic <nome> -n minicambio --from-env-file=k8s/overlays/prod/secrets/<nome>.env `
+#     --dry-run=client -o yaml | kubeseal --format yaml -w k8s/overlays/prod/secrets/<nome>.sealed.yaml
+# - Nome fixo (sem hash): trocar a senha exige "kubectl rollout restart" depois do apply.
 # - Cuidado: o Postgres só lê a senha ao criar o banco. Trocar aqui não troca a senha de um banco existente
-#   (exigiria ALTER USER); o Redis lê a cada subida, então nele basta trocar.
-secretGenerator:
-  - name: rates-db
-    envs:
-      - secrets/rates-db.env
-  - name: payments-db
-    envs:
-      - secrets/payments-db.env
-  - name: orders-db
-    envs:
-      - secrets/orders-db.env
-  - name: rates-cache
-    envs:
-      - secrets/rates-cache.env
+#   (exigiria ALTER USER); o Redis lê a cada subida, então nele basta trocar (e reiniciar).
 
 patches:
   # Passo 30.3: todos os Deployments do PROD usam a PriorityClass minicambio-prod (k8s/priorityclasses.yaml).
